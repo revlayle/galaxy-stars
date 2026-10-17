@@ -139,6 +139,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Counter feedback: `hits` 1 and 2 brighten the star (a different color per step); `COUNTDOWN` flashes the star, faster in the last half second. Colors are picked in the art phase; if multicolor limits make it unreadable, record the fallback in phase notes.
 
 ### Supernova
+- Explosions also come from hostiles hurled by a boost (§7); they behave the same.
 - When a countdown ends, the star explodes: tile cleared, star `GONE`, an explosion starts covering the 3 x 3 tiles around it.
 - An explosion lasts 0.6 s = 30 frames and is dangerous for its whole duration **[TUNE]**. It is drawn with explosion chars over the 3 x 3 tiles (animated, expanding then fading) and the tiles are restored afterwards.
 - While an explosion is active, anything in its area:
@@ -165,9 +166,15 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 
 ### Contact with the player
 - Player **not** boosting and not invincible: the player loses a life (§8).
-- Player **boosting**: the hostile is knocked away: it flies off in the player's movement direction at 6 px/f until it is fully off the playfield, then it is destroyed. While flying, any other hostile it touches is knocked away too, in the same direction. Any other hostile the boosting player touches is knocked away as well.
-- Knocked-away hostiles score in the hostile chain (§8).
-- Knocked-away hostiles count as destroyed as soon as they are hit (`stars_left` goes down then), so the galaxy can be cleared while one is still flying off.
+- Player **boosting**: the hostile is **hurled** away and then explodes:
+  - Direction: the player's movement direction (8 directions) at the moment of contact; if the player isn't moving, straight away from the player (nearest of 8 directions, player centre → hostile centre).
+  - It flies at 6 px/f for up to 16 frames (96 px, about 6 tiles) **[TUNE]**. Even if the player keeps boosting after it (3.75 px/f), the gap grows to about 48 px, outside the explosion.
+  - It explodes early when it touches another hostile star (not one that is itself being hurled) or a stationary star in any state, or when its box reaches a playfield edge. Otherwise it explodes at the end of the flight.
+  - The explosion is a normal explosion (§6): the 3 x 3 tiles around the tile under the hurled star's centre, 30 frames, with every effect of a supernova explosion. It can kill the player, destroys hostiles caught in it (chain scoring, §8) and sends stationary stars in it into their countdown, so hurls start chain reactions.
+  - It is not a supernova: no 100 points, no multiplier raise, no quasar chance.
+  - While flying it is harmless to the player, spins fast, and can't be hit again.
+  - Every hostile the boosting player touches is hurled, each in its own flight.
+- A hurled hostile scores the next chain step (§8) when it is hit, and counts as destroyed at that moment (`stars_left` goes down then), so the galaxy can be cleared while one is still flying.
 - Player invincible: any hostile touched is destroyed at once and counts in the hostile chain.
 
 ## 8. Scoring, multiplier and lives
@@ -180,13 +187,13 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 |---|---|
 | Star goes supernova (any cause, including chain reactions) | 100, then multiplier +1 |
 | Hostile destroyed by a supernova | 500, doubling for each further hostile in the same chain: 500, 1000, 2000, 4000, 8000, 16000, ... |
-| Hostile knocked away by boost | same chain as above |
+| Hostile hurled by boost (scores when hit; its explosion scores nothing itself) | same chain as above |
 | Hostile destroyed by the invincible player | same chain as above |
 | Galaxy clear bonus | 100 x seconds left (0 when the timer has run out) |
 
 - Supernova event: the 100 is multiplied by the multiplier *before* the +1.
 - Galaxy clear bonus: multiplied by the multiplier like every other event; the multiplier resets to x1 after it is added.
-- **Chain:** one shared chain counter for every hostile kill: supernova kills, boost knock-aways (including hostiles knocked by a flying hostile) and invincibility kills all add to it, and each kill scores the next doubling step. The chain stays alive while any of these is going on: an explosion is active, a star is in a countdown that was started by an explosion, a knocked-away hostile is still flying, or the player is invincible. When none of them is, the chain resets, so the next kill scores 500 again. **[TUNE]**
+- **Chain:** one shared chain counter for every hostile kill: supernova kills, boost hurls, kills by a hurled star's explosion and invincibility kills all add to it, and each kill scores the next doubling step. The chain stays alive while any of these is going on: an explosion is active, a star is in a countdown that was started by an explosion, a hurled hostile is still flying, or the player is invincible. When none of them is, the chain resets, so the next kill scores 500 again. **[TUNE]**
 - Chain cap: the doubling stops at the 8th kill (64,000); further kills in the chain score 64,000 each **[TUNE]**.
 
 ### Multiplier
@@ -274,7 +281,7 @@ Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/til
 
 ## 13. Sound
 
-Basic SID effects only, no music, built in the polish phase: boost, star hit, supernova, hostile warning, knock-away, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
+Basic SID effects only, no music, built in the polish phase: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
 
 ## 14. Source layout
 
@@ -284,7 +291,7 @@ src/video.p8       VIC bank setup, IRQ, tile drawing, HUD, sprite shadow registe
 src/input.p8       joystick read, edge detection, Run/Stop, scripted input for tests
 src/player.p8      player movement, boost, bounce, spin, invincibility
 src/stars.p8       stationary stars: placement, hits, countdowns, warnings, specks
-src/hostiles.p8    hostile stars: spawn, steering, knock-away
+src/hostiles.p8    hostile stars: spawn, steering, hurl
 src/explode.p8     explosion list, drawing, area checks
 src/score.p8       BCD score, multiplier, lives, timer, chains
 src/quasar.p8      quasar spawn and pickup
@@ -302,8 +309,9 @@ None at the moment (star art kinds are decided in the art phase, §12).
 ### Resolved
 - HUD (designer, 2026-10-17): no galaxy number on the HUD, it's shown at galaxy start. Time, multiplier and lives each use a one-char icon (clock/hourglass, small centred x, yellow star) followed by the digits.
 - Losing a life (designer, 2026-10-17): 1 s death effect while play continues, respawn in the centre with 2 s of safety, hostiles stay, timer keeps running (§8). The multiplier resets to x1.
-- Designer answers 2026-10-17: boost glows through bright colors (§5); a warning star hit to 3 goes supernova instead of hostile (§6); hit-count and countdown feedback if doable (§6); hostiles spawn 4+ tiles from the player and stay at 120% after galaxy 11, pass over stars and each other (§7); knock-aways, supernova kills and invincibility kills share one chain, capped at the 8th step (§8); supernova points use the multiplier before the +1; clear bonus multiplied then reset; extra life every 20,000 to start with (§8); quasar appears after its explosion, invincibility glow slows in its last second (§9).
+- Designer answers 2026-10-17: boost glows through bright colors (§5); a warning star hit to 3 goes supernova instead of hostile (§6); hit-count and countdown feedback if doable (§6); hostiles spawn 4+ tiles from the player and stay at 120% after galaxy 11, pass over stars and each other (§7); boost hurls, supernova kills and invincibility kills share one chain, capped at the 8th step (§8); supernova points use the multiplier before the +1; clear bonus multiplied then reset; extra life every 20,000 to start with (§8); quasar appears after its explosion, invincibility glow slows in its last second (§9).
 - Art budget (designer, 2026-10-17): 8 star kinds and 3 explosion frames, so all chars fit without reuse (§12).
+- Boost vs hostile (designer change, 2026-10-17): instead of flying off the screen, a boosted hostile is hurled about 6 tiles away and explodes like a supernova (can hurt the player, starts chain reactions). It explodes early on touching another star or a playfield edge. The hit scores the chain step; the explosion adds no supernova points or multiplier (§7).
 
 ## 16. Backlog
 

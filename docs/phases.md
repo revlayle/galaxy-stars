@@ -93,11 +93,12 @@ Done when:
 **Status:** not started
 **Spec:** §7, §8 (chains)
 
-Build: spawn timer, red warning, hostile sprite and steering, speed per galaxy, contact death, boost knock-away with pinball knocks, explosion kills, chain scoring.
+Build: spawn timer, red warning, hostile sprite and steering, speed per galaxy, contact death, boost hurl with its explosion (early on contact or at an edge), explosion kills, chain scoring.
 
 Done when:
 - [ ] Hostiles appear at the right interval, never more than 6.
-- [ ] Scripted tests for contact death, boost knock-away and a two-hostile knock chain.
+- [ ] Scripted tests for contact death and a boost hurl: the star flies 96 px and explodes; a hurl into another hostile explodes on contact and kills both, scoring two chain steps.
+- [ ] A hurl explosion next to a stationary star starts its countdown.
 - [ ] A supernova kills a hostile and scores 500 x multiplier; a second in the same chain scores 1000 x multiplier.
 
 ## Phase 5: Game flow
