@@ -53,16 +53,29 @@ Done when:
 - `main.DEBUG_HUD` doesn't exist yet; phase 2 adds it with its first readout.
 
 ## Phase 2: Player movement
-**Status:** not started
+**Status:** done
 **Spec:** §5
 
 Build: 8-direction movement, boost with length and cooldown, playfield clamp, spin animation with direction rules.
 
 Done when:
-- [ ] Scripted test: hold right for 2 s → moved 150 px (±2).
-- [ ] Scripted test: boost → 3.75 px/f for 75 frames, second press during boost or within 25 frames after it ends does nothing; a press after that boosts.
-- [ ] Scripted test: player can't leave the playfield at any edge.
-- [ ] Spin direction follows the rules (screenshots of frame numbers on the debug HUD).
+- [x] Scripted test: hold right for 2 s → moved 150 px (±2).
+- [x] Scripted test: boost → 3.75 px/f for 75 frames, second press during boost or within 25 frames after it ends does nothing; a press after that boosts.
+- [x] Scripted test: player can't leave the playfield at any edge.
+- [x] Spin direction follows the rules (screenshots of frame numbers on the debug HUD).
+
+**Notes:**
+- `src/player.p8`. The player's position is the top-left of its 13x13 collision box (frame pixel 4,4), not the sprite frame; that makes the box clamp and the phase 3 hit checks simple. Box range: x 0-307, y 0-179. Start box `154, 90`. Spec §4 updated.
+- Clamp: the box, as in the spec (designer confirmed). At the top edge the star's tips overlap the HUD row by up to 4 px; at the other edges the border hides them.
+- The player has its own variables in `player`, not the shared actor arrays of spec §4; hostiles get theirs in phase 4.
+- Diagonal speeds: 17 normal, 42 boost (24 and 60 x 181/256, rounded).
+- The boost starts on the frame fire is pressed and moves at boost speed on that frame; 75 boosted frames, then 25 frames of cooldown in which presses are ignored. Boost with no stick direction just runs the timer.
+- Opposite directions held together (left+right) cancel on that axis.
+- The spin advances whenever the stick moves the player, including while pushing against an edge.
+- Boost glow (spec §5) built here: white, yellow, orange, yellow, changing every 2 frames.
+- Stars are not solid yet (phase 3); the player passes over them.
+- Self-test: `main.DEBUG_HUD` and `main.TEST` (1 move, 2 boost, 3 clamp, 4 spin) with `input.SCRIPTED`. Results: test 1 x 154 → 304 (150 px). Test 2 x 304 → 22 after 75 boosted frames (281 px = 3.75 px/f); mid-boost the timer showed 30 left at frame 45, so the press at boost frame 41 was ignored; presses 11 and 24 frames after the boost were ignored, the one at 26 frames started boost 2 (frame 251). Test 3 box x min 0 / max 307, y min 0 / max 179. Test 4 right: frames 1,2,3,4,5,0 one every 3 frames; up after right: still forward; left: 4,3,2,1,0,5; down after left: still backward; boosting right: forward, one per frame.
+- The compiler prints "condition is always false" / "when-value is a constant" warnings for the self-test switches. Expected.
 
 ## Phase 3: Stars, supernovas, scoring
 **Status:** not started

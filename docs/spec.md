@@ -94,6 +94,7 @@ Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-7), `state`,
 | 7 | quasar |
 
 Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left of the 24x21 frame), `x_frac`, `y_frac`, `byte vx, vy`, `state`, `anim_frame`, `anim_timer`, `spin_dir`.
+- The player keeps its own variables in `player.p8`, and its `x`, `y` are the top-left of its 13 x 13 collision box (frame pixel 4,4), so the box clamp is `x 0..307`, `y 0..179`. The sprite frame starts 4 px up and left of it.
 
 ### Collision boxes [TUNE]
 - Player: 13 x 13 centred in the 21 x 21 art (corners of the star don't count).
