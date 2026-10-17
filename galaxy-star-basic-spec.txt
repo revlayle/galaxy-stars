@@ -1,0 +1,87 @@
+Another single-screen video game called - Galaxy Stars
+
+This one features the player as a alien.
+The player can freely move around the screen
+Pressing the button boosts the player to sprint
+
+Each level is a called a galaxy
+Each level features a multiple stationary stars
+Stars, when slammed into by the player, will eventually super nova, causing a small explosion.
+
+The goal is to clear all the level's stars and move to the next galaxy
+Stars, eventually activate and become hostile stars and seek out the player.
+The player can sprint to slam a star to destroy it.  Stars that have become hostile do not explode like a super nova
+
+When the player touches a stationary star
+Depending on the speed it was hit will increase a super nova counter.
+At slow speed it increases by one.
+At sprint speed it increases by three.
+At 3 or more the start will being the super nova process. It will xplode in 2 seconds
+If the player is caught in the explosion, the lose a life.
+If a hostile star is caught in the explosions, it is destroyed and the player gets points
+If a nearby stationary star is caught in the explosion, it will cause those stationary stars to immediately begin the super nova process (essentially adding 3 to the star's super nova counter)
+
+When the player hits a stationary star the will bounce back.
+When the player uses boost to hit a hostile star they bascially will propel the hostile star off the screen.  Any other hostile star they hit also gets destroyed and propelled off screen
+
+Player starts the game with 3 lives.
+The game tracks a score multiplier it starts at x1.  All scoring events are always multipled by this number.
+Each galaxy has 60 seconds of time.
+Multiplier resets to x1 and the end of a level.
+
+Scoring:
+- Causing a star to super nova = 100 points and +1 multiplier
+- A super nova destroying a hostile star = 500 - every other hostiale start they can hit in a chain will double scroe (independently of the multiplier)
+- A level is complete when all starts stationary or hostile are destroyed.
+- Level complete bonus = 100 * time reamining
+- The player can continue to 0 time, nothing bad happens, just no bonus is given.
+- Extra lives ever 10,000 points.
+- Multiplier can never go beyond x9
+- Number of player stock cannot go beyond 9.
+- Player loses a life if
+  - Touched by a hostile star and the player is not boost moving
+  - Caught in a supernova explosion
+- Multiplier, when more than x1 will eventually drop by 1 over time until it is back to x1.
+  - at x9 it will drop to x8 after 1 second
+  - at x2 it will drop to x1 after 3.5 seconds
+  - a multiplier increasing event resets the timer.  At x9 a multipler event does not increase to x10 but will reset the timer.
+  
+Playe field:
+- Top Row = score + level + multipler + lives
+- The rest of the playfield = 2x2 tiles or the remaining 40 cols by 24 rows = 20 x 12 playfield
+  
+More game play notes
+- At level 1, the hostile star appears every 6 seconds.  Every level it drops by half a second, until a floor over every one second.
+- The player can have a maximum 6 hostile stars chasing them.
+- Level 1 has 15 stars on screen, increase by 2 stars every level until a max of 45 stars.
+- 1 second before a star goes hostile, it flashes red for a second, the stationary star then turns into a hostile red star to chase the player, the original stationary star is gone.
+- Supernovas are explosions that occupy the 3x3 tile around the star the super novaed - again surrounding stationary stars immediate start their super nova count down
+- There is a 1 in 100 chance that a super nova leaves behind a quasar - the quasar burns out ofter 5 seconds.  If the player grabs it, they are invincible for 8 seconds.
+  - During invicibility, player will constantly move at boost speed, no button press required
+  - Any stationary star they touch immediately super novas
+  - Any hostile star is immediately destroyed (counts as part of a hostile star chain)
+  - quasars can only appear once a level
+- Players always appear in the center
+  - No stationary stars can appear immediately around them
+- Enemy stars on level 1 move approximately half of the player's normal speed
+- By level 11 they should be moving about 120% player speed. Player will have to boost to get away
+
+Movement notes:
+- Pressing the button boosts 
+  - the player moves 2.5x speed for 1.5 seconds
+  - Player has full control
+  - player cannot boost again for a half a second until after the boost ends
+  
+Graphics
+- Oddly enough the player alien looks like a 5-pointed yellow star that spins when it moves.  Left = counter clockwise, right = clockwise.  If mvoing purely up or down - then spin the last diection they were spinning (default clockwise).
+   - The sprite can be 21x21
+   - when invicible, it glows thru multiple colors rapidly.
+- hostile stars, are 4 pointed stars that are red, they rotate similarly to the player
+- The playfield stars looks like more a realistic star like icon, we can make like 10-12 different types of them, different colors
+- Empty spaces on the play field can have faint speck of stars, most just for effect and does not interact with the game.
+
+Remember 
+- I use the term level a lot, in game we refer to a level as a galaxy.
+
+
+
