@@ -34,9 +34,12 @@ video {
     ubyte[4] quad_offset = [0, 1, 40, 41]
 
     ; star kind -> top-left char and color (the tiles star_0, star_1, ... in assets/tiles.txt)
-    ubyte[] star_char = [assets.TILE_STAR_0_TL, assets.TILE_STAR_1_TL, assets.TILE_STAR_2_TL, assets.TILE_STAR_3_TL]
+    ubyte[] star_char = [assets.TILE_STAR_0_TL, assets.TILE_STAR_1_TL, assets.TILE_STAR_2_TL, assets.TILE_STAR_3_TL,
+                         assets.TILE_STAR_4_TL, assets.TILE_STAR_5_TL, assets.TILE_STAR_6_TL, assets.TILE_STAR_7_TL]
     ubyte[len(star_char)] star_color = [assets.TILE_STAR_0_COLOR, assets.TILE_STAR_1_COLOR,
-                                        assets.TILE_STAR_2_COLOR, assets.TILE_STAR_3_COLOR]
+                                        assets.TILE_STAR_2_COLOR, assets.TILE_STAR_3_COLOR,
+                                        assets.TILE_STAR_4_COLOR, assets.TILE_STAR_5_COLOR,
+                                        assets.TILE_STAR_6_COLOR, assets.TILE_STAR_7_COLOR]
     const ubyte STAR_KINDS = len(star_char)
     ubyte[] speck_char = [assets.CHAR_SPECK_0, assets.CHAR_SPECK_1, assets.CHAR_SPECK_2,
                           assets.CHAR_SPECK_3, assets.CHAR_SPECK_4]

@@ -75,7 +75,7 @@ Same scheme as Smashy Smashy: the VIC-II in **bank 3 ($C000-$FFFF)**, the progra
 Background specks have their own map, `&ubyte[240] specks = $C500`: 0 = none, else `(speck kind + 1) << 2 | char` (char 0-3 = TL, TR, BL, BR of the tile).
 
 ### Stationary stars
-Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-11), `state`, `hits` (supernova counter), `timer` (frames). States:
+Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-7), `state`, `hits` (supernova counter), `timer` (frames). States:
 
 | State | Meaning |
 |---|---|
@@ -228,7 +228,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 
 - Galaxy `n` has `min(45, 15 + 2 * (n - 1))` stars (45 from galaxy 16).
 - Placement: random free tiles, never in the 4 x 4 tiles around the player's start (tile columns 8-11, rows 4-7). Stars may be next to each other (chain reactions).
-- Each star gets a random `kind` (art type 0-11).
+- Each star gets a random `kind` (art type 0-7).
 - Background specks: about one empty tile in four shows a faint speck (1-2 px dots in dark grey, grey or blue) in one of its 4 chars **[TUNE]**. Specks are decoration only: they live in the screen, not the tile map, and are redrawn when a tile is restored.
 - 60 seconds per galaxy. At 0 the timer stops; play continues with no penalty and no clear bonus.
 - RNG: Prog8's `math.rnd()`, seeded from the raster line and frame counter when fire is pressed on the title screen.
@@ -262,8 +262,9 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 Clockwise spin plays the frames forward, counter-clockwise backward.
 
 ### Chars (2x2 per tile, multicolor)
-- 12 stationary star kinds: "realistic" star icons (bright core, glow, rays) in different colors and shapes. With multicolor chars each tile has 1 own color (0-7) plus the two shared colors, so the 12 kinds are a mix of shapes and own colors **[DECIDE in the art phase]**. Red (2) is kept for the hostile warning flash.
-- Explosion: 3 x 3 tiles = 6 x 6 chars per animation frame, 3-4 frames. Mostly symmetric, so a frame may reuse mirrored chars.
+- 8 stationary star kinds: "realistic" star icons (bright core, glow, rays) in different colors and shapes. With multicolor chars each tile has 1 own color (0-7) plus the two shared colors, so the 8 kinds are a mix of shapes and own colors **[DECIDE in the art phase]**. Red (2) is kept for the hostile warning flash.
+- Explosion: 3 x 3 tiles = 6 x 6 chars per animation frame, 3 frames.
+- Char budget: 192 free chars (64-255). 8 star kinds (32) + 3 explosion frames (108) + 5 specks + 3 icons = 148, leaving 44 spare.
 - Background specks: 4-6 chars.
 - HUD font: ROM screen codes 0-63 copied to chars 0-63 at startup, plus 3 hi-res icon chars (time, multiplier, lives; §2).
 
@@ -301,6 +302,7 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - HUD (designer, 2026-10-17): no galaxy number on the HUD, it's shown at galaxy start. Time, multiplier and lives each use a one-char icon (clock/hourglass, small centred x, yellow star) followed by the digits.
 - Losing a life (designer, 2026-10-17): 1 s death effect while play continues, respawn in the centre with 2 s of safety, hostiles stay, timer keeps running (§8). The multiplier resets to x1.
 - Designer answers 2026-10-17: boost glows through bright colors (§5); a warning star hit to 3 goes supernova instead of hostile (§6); hit-count and countdown feedback if doable (§6); hostiles spawn 4+ tiles from the player and stay at 120% after galaxy 11, pass over stars and each other (§7); knock-aways, supernova kills and invincibility kills share one chain, capped at the 8th step (§8); supernova points use the multiplier before the +1; clear bonus multiplied then reset; extra life every 20,000 to start with (§8); quasar appears after its explosion, invincibility glow slows in its last second (§9).
+- Art budget (designer, 2026-10-17): 8 star kinds and 3 explosion frames, so all chars fit without reuse (§12).
 
 ## 16. Backlog
 

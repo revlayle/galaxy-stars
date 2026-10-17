@@ -42,13 +42,14 @@ Done when:
 **Notes:**
 - Program ends at `$1789` (code, tables and art).
 - The compiler prints one warning, "condition is always false" at `input.p8` (the `SCRIPTED` switch). Expected; the converter prints none. The scripted-input path was compiled once with the switch on.
-- Art file format extended (spec �12): `tile ... size WxH` for multi-tile art (the 3x3 explosion), `char` (one multicolor char, specks) and `icon` (one hi-res char, HUD icons). No `mode` line: sprites are always hi-res, chars always multicolor.
-- Placeholder art drawn by a script (rotated star polygons), saved as plain text in `assets/`. 4 star kinds for now; `video.star_char` lists them.
+- Art file format extended (spec §12): `tile ... size WxH` for multi-tile art (the 3x3 explosion), `char` (one multicolor char, specks) and `icon` (one hi-res char, HUD icons). No `mode` line: sprites are always hi-res, chars always multicolor.
+- Placeholder art drawn by a script (rotated star polygons), saved as plain text in `assets/`. 8 star kinds; `video.star_char` lists them.
 - Specks are stored in `video.specks` at `$C500` (one byte per tile: speck kind and which of the 4 chars), so `draw_tile` can redraw them.
 - Shared char colors for now: `$D022` dark grey (11), `$D023` grey (12), chosen so specks can be dark grey, grey or blue. Star glows use them too, which looks dull; to revisit in the art phase.
 - Player start: the art centre (frame pixel 10,10) sits on the playfield centre `px 160, py 96`, so the sprite's top-left is `150, 86`.
 - HUD columns: `SCORE` at 1, digits 7-14; time icon 27 + digits 28-29; multiplier icon 32 + digit 33; lives icon 36 + digit 37.
-- Char budget warning for phase 7: 12 star kinds (48 chars) + 4 explosion frames (144) + specks + icons is more than the 192 free chars. Needs reuse of identical or mirrored chars in the converter, or fewer explosion frames.
+- Char budget warning for phase 7: 12 star kinds (48 chars) + 4 explosion frames (144) + specks + icons is more than the 192 free chars. Resolved by the designer: 8 star kinds and 3 explosion frames (148 chars, spec §12).
+- Placeholder star kinds 4-7 added (now 8, matching spec §12): green (5), blue (6), yellow (7, X shape) and cyan (3, short cross). Red (2) stays free for the warning flash, and black (0) is skipped because its core would vanish on the black background. Explosion frames 1-2 are still to come (phase 3/7).
 - `main.DEBUG_HUD` doesn't exist yet; phase 2 adds it with its first readout.
 
 ## Phase 2: Player movement
@@ -108,4 +109,4 @@ Done when:
 **Status:** not started
 **Spec:** §12, §13
 
-Build: final sprites and chars (12 star kinds, explosion animation, specks), invincibility glow, sound effects.
+Build: final sprites and chars (8 star kinds, 3-frame explosion animation, specks), invincibility glow, sound effects.
