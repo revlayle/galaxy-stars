@@ -1,5 +1,5 @@
-; Player (spec section 5). Phase 2: 8-direction movement, boost with cooldown, playfield clamp, spin
-; animation and boost glow.
+; Player (spec section 5): 8-direction movement, boost with cooldown, playfield clamp, spin animation,
+; boost glow, and the knockback after hitting a star (spec section 6).
 ; Position is the top-left of the 13x13 collision box in playfield pixels plus a 1/16 px fraction.
 ; The box sits at pixel (4,4) of the 24x21 sprite frame (centred in the 21x21 art).
 
@@ -22,6 +22,10 @@ player {
     const byte BOOST_DIAG = 42
     const ubyte BOOST_FRAMES = 75
     const ubyte COOLDOWN_FRAMES = 25
+    ; [TUNE] knockback after hitting a star: 3 px/f for 6 frames, no joystick control
+    const byte KNOCK_SPEED = 48
+    const byte KNOCK_DIAG = 34
+    const ubyte KNOCK_FRAMES = 6
 
     ; [TUNE] animation
     const ubyte SPIN_FRAMES = 6
@@ -50,6 +54,10 @@ player {
     bool spin_ccw                       ; false = clockwise (the start direction)
     ubyte color
     ubyte boosts                        ; boosts started (debug readout)
+    ubyte knock_left                    ; knockback frames left
+    byte knock_vx
+    byte knock_vy
+    ubyte bounces                       ; bounces started (debug readout)
 
     sub init() {
         x = START_X
@@ -62,29 +70,37 @@ player {
         anim_timer = 0
         spin_ccw = false
         color = COLOR
+        knock_left = 0
     }
 
     sub update() {
-        if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 {
-            boost_left = BOOST_FRAMES
-            boosts++
-        }
-
-        ubyte dir = input.held & %1111
-        byte vx = dir_vx[dir]
-        byte vy = dir_vy[dir]
-        if boost_left != 0 {
-            vx = boost_vx[dir]
-            vy = boost_vy[dir]
-        }
-        move(vx, vy)
-
-        if vx < 0
-            spin_ccw = true
-        else if vx > 0
-            spin_ccw = false
-        if vx != 0 or vy != 0
+        if knock_left != 0 {
+            ; knockback: no joystick control (fire presses are ignored too); the boost keeps running
+            knock_left--
+            move(knock_vx, knock_vy)
             spin()
+        } else {
+            if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 {
+                boost_left = BOOST_FRAMES
+                boosts++
+            }
+
+            ubyte dir = input.held & %1111
+            byte vx = dir_vx[dir]
+            byte vy = dir_vy[dir]
+            if boost_left != 0 {
+                vx = boost_vx[dir]
+                vy = boost_vy[dir]
+            }
+            move(vx, vy)
+
+            if vx < 0
+                spin_ccw = true
+            else if vx > 0
+                spin_ccw = false
+            if vx != 0 or vy != 0
+                spin()
+        }
 
         color = COLOR
         if boost_left != 0 {
@@ -94,6 +110,38 @@ player {
                 cooldown = COOLDOWN_FRAMES
         } else if cooldown != 0
             cooldown--
+    }
+
+    sub bounce(byte dx, byte dy) {
+        ; Knockback away from a star: dx, dy point from the star to the player. Nearest of 8 directions:
+        ; an axis counts when it is at least half the other (tan 26.6 deg, close to the 22.5 deg boundary).
+        ubyte ax = dx as ubyte
+        if dx < 0
+            ax = (-dx) as ubyte
+        ubyte ay = dy as ubyte
+        if dy < 0
+            ay = (-dy) as ubyte
+        bool use_x = ax << 1 > ay
+        bool use_y = ay << 1 > ax
+        byte speed = KNOCK_SPEED
+        if use_x and use_y
+            speed = KNOCK_DIAG
+        knock_vx = 0
+        knock_vy = 0
+        if use_x {
+            knock_vx = speed
+            if dx < 0
+                knock_vx = -speed
+        }
+        if use_y {
+            knock_vy = speed
+            if dy < 0
+                knock_vy = -speed
+        }
+        if not use_x and not use_y
+            knock_vy = -KNOCK_SPEED     ; dead centre (can't happen with boxes this size): straight up
+        knock_left = KNOCK_FRAMES
+        bounces++
     }
 
     sub move(byte vx, byte vy) {

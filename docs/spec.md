@@ -74,6 +74,8 @@ Same scheme as Smashy Smashy: the VIC-II in **bank 3 ($C000-$FFFF)**, the progra
 
 Background specks have their own map, `&ubyte[240] specks = $C500`: 0 = none, else `(speck kind + 1) << 2 | char` (char 0-3 = TL, TR, BL, BR of the tile).
 
+Explosion cover map, `&ubyte[240] cover = $C600`: the number of active explosions drawn over each tile. Star color changes skip covered tiles, and a tile is redrawn from the tile map when its last explosion ends.
+
 ### Stationary stars
 Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-7), `state`, `hits` (supernova counter), `timer` (frames). States:
 
@@ -146,6 +148,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - **Player** (hurt box overlaps the area): loses a life (§8), unless invincible.
   - **Hostile star**: destroyed, scores in the hostile chain (§8). Also a hostile flying into an explosion that is still active.
   - **Stationary star** (`IDLE` or `WARNING`) whose tile is in the area: goes straight to `COUNTDOWN` with the full 2 s (the notes: "essentially adding 3 to the counter"). Stars already in `COUNTDOWN` keep their timer.
+  - **Staggered chains** (designer, 2026-10-17): when one explosion sends several stars into their countdown, they go off one after another, in random order: the first gets the full 100 frames, each further one 6 frames more (`stars.STAGGER`) **[TUNE]**. This makes the chain reaction visible and keeps the frame rate smooth.
 - Up to 8 explosions at once (list in game RAM) **[TUNE]**; with 45 stars a chain reaction can be wide but each step takes 2 s, so 8 should be plenty. If the list is full, the new explosion takes the oldest slot.
 
 ## 7. Hostile stars

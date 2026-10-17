@@ -87,9 +87,8 @@ video {
         ubyte ch
         ubyte co
         if t != 0 {
-            ubyte kind = stars.kind[t - 1]
-            ch = star_char[kind]
-            co = star_color[kind]
+            ch = star_char[stars.kind[t - 1]]
+            co = stars.shown[t - 1]
             scr[0] = ch
             scr[1] = ch + 1
             scr[40] = ch + 2
@@ -104,6 +103,20 @@ video {
             if s != 0
                 scr[quad_offset[s & 3]] = speck_char[(s >> 2) - 1]
         }
+        scr += COLOR_RAM - SCREEN
+        scr[0] = co
+        scr[1] = co
+        scr[40] = co
+        scr[41] = co
+    }
+
+    sub draw_quad(ubyte col, ubyte row, ubyte ch, ubyte co) {
+        ; Chars ch to ch+3 (TL, TR, BL, BR) in one color over a tile, without touching the tile map.
+        ^^ubyte @zp scr = tile_row_addr[row] + (col << 1)
+        scr[0] = ch
+        scr[1] = ch + 1
+        scr[40] = ch + 2
+        scr[41] = ch + 3
         scr += COLOR_RAM - SCREEN
         scr[0] = co
         scr[1] = co

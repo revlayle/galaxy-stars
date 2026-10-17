@@ -78,16 +78,33 @@ Done when:
 - The compiler prints "condition is always false" / "when-value is a constant" warnings for the self-test switches. Expected.
 
 ## Phase 3: Stars, supernovas, scoring
-**Status:** not started
+**Status:** done
 **Spec:** §4, §6, §8 (score, multiplier), §10
 
 Build: galaxy generation, player vs star hits and bounce, hit counter and countdown, explosions and chain reactions, player death by explosion (life count only; full respawn in phase 5), score, multiplier with drop timer, HUD updates, galaxy timer.
 
 Done when:
-- [ ] Scripted tests: 3 normal hits start the countdown; 1 boosted hit starts it; star explodes 100 frames later.
-- [ ] An explosion next to another star starts that star's countdown (chain reaction screenshot).
-- [ ] Score and multiplier on the HUD match the events of a scripted run; multiplier drops on schedule.
-- [ ] Player caught in an explosion loses a life.
+- [x] Scripted tests: 3 normal hits start the countdown; 1 boosted hit starts it; star explodes 100 frames later.
+- [x] An explosion next to another star starts that star's countdown (chain reaction screenshot).
+- [x] Score and multiplier on the HUD match the events of a scripted run; multiplier drops on schedule.
+- [x] Player caught in an explosion loses a life.
+
+**Notes:**
+- New modules: `src/score.p8` (BCD score in hundreds, multiplier, lives, galaxy timer) and `src/explode.p8` (explosion list, drawing, area checks). Star hits, countdowns and supernovas are in `stars.p8`, the knockback in `player.p8`.
+- Frame order: input, score/timer tick, player, player vs stars, explosions vs player, star timers (supernovas, then countdowns), explosion timers. The score tick runs first so a multiplier raised in a frame keeps its full drop time.
+- Galaxy 1 only: 15 stars from `stars.for_galaxy()`. Galaxy clear (`stars.left` = 0), game over and respawn come in phase 5. At 0 lives nothing happens yet.
+- Each explosion takes at most one life (the player stays where they are until phase 5 adds the respawn).
+- Knockback: the boost timer keeps counting down during the 6 knockback frames (the boost isn't cancelled), and fire presses during the knockback are ignored. The spin keeps turning. Direction: an axis counts when it is at least half the other (about 26.6°, close to the 22.5° boundary).
+- Touching a star counts once, then that star ignores the player for 10 frames (no hit, no bounce). Two stars touched in the same frame both count; the bounce is away from the last one checked.
+- `explode.cover` at `$C600` counts the explosions over each tile. Star color changes skip covered tiles; a tile is redrawn from the map when its last explosion ends. Spec §4 updated.
+- Explosion art: only frame 0 exists, shown for all 30 frames (the 3-frame animation is phase 7).
+- Hit feedback colors are placeholders, by the star's own color: hits 1 yellow, hits 2 white (yellow stars: white then cyan; white stars: yellow then cyan). Countdown flashes the star's own pixels white/black every 8 frames, every 2 frames in the last 25; the shared-color glow stays. To revisit in the art phase.
+- Staggered chains (designer request, spec §6): stars caught by one explosion get countdowns of 100, 106, 112, ... frames in random order, so they don't all explode in the same frame. Test 10 (one explosion catching 5 stars): star 0 at 158, the others at 258, 264, 270, 276, 282. Two separate chains can still line up in the same frame; not handled.
+- Overlapping explosions: a tile under two explosions shows the part of whichever drew last, also after that one ends (the danger area is still right). Looks like stray slivers; to revisit with the explosion animation in phase 7.
+- Self-tests (`main.TEST` with `input.SCRIPTED` and `main.DEBUG_HUD`): 5 three hits, 6 boosted hit, 7 chain reaction, 8 caught in an explosion, 9 chain with a multiplier log, 10 staggered chain. Tests 1-4 now run with no stars. Readouts: frames, state+hits of stars 0-3, countdown and supernova frames of star 0, lives, score (hundreds), multiplier, bounces.
+- Results: test 5: hits 1 (frame 77), 2 (93), countdown on the 3rd hit (105), supernova at 205. Test 6: one boosted hit, countdown at 58, supernova at 158. Test 7: star 0 explodes at 158 and star 1 starts its countdown; star 1 explodes at 258 and star 2 starts; star 2 explodes at 358; star 3, two tiles from star 2, stays idle. Score 600 (100 x1 + 100 x2 + 100 x3), multiplier x4. Test 9: multiplier x2 at 158, x3 at 258, x4 at 358, then drops at 497 (139 frames), 654 (157) and 829 (175). Test 8: lives 3 -> 2 once, multiplier back to x1. Timer: 01 at about 61 s, 00 after that and stays there. Phase 2 test 1 still gives x 154 -> 304.
+- The compiler prints the expected "condition is always false/true" and "when-value is a constant" warnings for the self-test switches.
+- **prog8c 12.3.4 bug:** `video.tiles[video.row_start[row[i]] + col[i]] = 0` compiles to `row_start[row] + row` (the `col[i]` load is overwritten), so the wrong tile was cleared and exploded stars came back. Worked around in `stars.supernova` by computing the index in two steps. The other tile index sums (plain variables) were checked in the generated assembly and are correct. Avoid summing two array reads inside an index.
 
 ## Phase 4: Hostile stars
 **Status:** not started
