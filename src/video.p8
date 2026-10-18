@@ -166,6 +166,8 @@ video {
 
     sub hud_score(ubyte bcd_hi, ubyte bcd_mid, ubyte bcd_lo) {
         ; Score in hundreds, 6 BCD digits, shown with a fixed "00": 8 digits.
+        if main.DEBUG_HUD
+            return                      ; the debug readouts use the HUD row
         put_bcd2(SCREEN + HUD_SCORE_COL, bcd_hi)
         put_bcd2(SCREEN + HUD_SCORE_COL + 2, bcd_mid)
         put_bcd2(SCREEN + HUD_SCORE_COL + 4, bcd_lo)
@@ -173,14 +175,20 @@ video {
     }
 
     sub hud_time(ubyte bcd) {
+        if main.DEBUG_HUD
+            return                      ; the debug readouts use the HUD row
         put_bcd2(SCREEN + HUD_TIME_COL + 1, bcd)
     }
 
     sub hud_mult(ubyte n) {
+        if main.DEBUG_HUD
+            return                      ; the debug readouts use the HUD row
         put_digit(SCREEN + HUD_MULT_COL + 1, n)
     }
 
     sub hud_lives(ubyte n) {
+        if main.DEBUG_HUD
+            return                      ; the debug readouts use the HUD row
         put_digit(SCREEN + HUD_LIVES_COL + 1, n)
     }
 
@@ -240,15 +248,17 @@ video {
         frame_ready = false
     }
 
+    ubyte[8] sprite_bit = [1, 2, 4, 8, 16, 32, 64, 128]
+
     sub set_sprite(ubyte n, ubyte frame, ubyte color, uword px, ubyte py) {
         ; Playfield coordinates of the sprite's top-left -> hardware position (spec section 2).
-        ubyte bit = 1 << n
+        ubyte bit = sprite_bit[n]
         spr_ptr[n] = frame
         spr_col[n] = color
-        uword sx = px + 24
-        spr_x[n] = lsb(sx)
+        px += 24
+        spr_x[n] = lsb(px)
         spr_y[n] = py + 50 + 8
-        if msb(sx) != 0
+        if msb(px) != 0
             spr_msb |= bit
         else
             spr_msb &= ~bit
@@ -256,7 +266,7 @@ video {
     }
 
     sub hide_sprite(ubyte n) {
-        spr_ena &= ~(1 << n)
+        spr_ena &= ~sprite_bit[n]
     }
 
 chars_bin:

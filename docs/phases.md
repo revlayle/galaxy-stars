@@ -107,16 +107,38 @@ Done when:
 - **prog8c 12.3.4 bug:** `video.tiles[video.row_start[row[i]] + col[i]] = 0` compiles to `row_start[row] + row` (the `col[i]` load is overwritten), so the wrong tile was cleared and exploded stars came back. Worked around in `stars.supernova` by computing the index in two steps. The other tile index sums (plain variables) were checked in the generated assembly and are correct. Avoid summing two array reads inside an index.
 
 ## Phase 4: Hostile stars
-**Status:** not started
+**Status:** done
 **Spec:** §7, §8 (chains)
 
 Build: spawn timer, red warning, hostile sprite and steering, speed per galaxy, contact death, boost hurl with its explosion (early on contact or at an edge), explosion kills, chain scoring.
 
 Done when:
-- [ ] Hostiles appear at the right interval, never more than 6.
-- [ ] Scripted tests for contact death and a boost hurl: the star flies 96 px and explodes; a hurl into another hostile explodes on contact and kills both, scoring two chain steps.
-- [ ] A hurl explosion next to a stationary star starts its countdown.
-- [ ] A supernova kills a hostile and scores 500 x multiplier; a second in the same chain scores 1000 x multiplier.
+- [x] Hostiles appear at the right interval, never more than 6.
+- [x] Scripted tests for contact death and a boost hurl: the star flies 96 px and explodes; a hurl into another hostile explodes on contact and kills both, scoring two chain steps.
+- [x] A hurl explosion next to a stationary star starts its countdown.
+- [x] A supernova kills a hostile and scores 500 x multiplier; a second in the same chain scores 1000 x multiplier.
+
+**Notes:**
+- New module `src/hostiles.p8`: 6 slots (sprite = slot + 1), spawn timer, warning hand-off, steering, spin, player contact, hurl flight and explosion, explosion kills. The WARNING state (red flash, then the tile is cleared and the hostile appears) is in `stars.p8`; the chain counter and its BCD step table (500 ... 64,000) are in `score.p8`.
+- Frame order: input, score/timer, player, hostiles (spawn, steer, hurl flights), player vs stars, player vs hostiles, explosions vs player, explosions vs hostiles, star timers, explosion timers and tile restore, chain check, sprites.
+- Hostile position is the top-left of its 12x12 box, at frame pixel (4,4) like the player. A new hostile's box is exactly the star's box (tile pixels 2-13). Box range x 0-308, y 0-180. Spec §4 updated.
+- Steering: one heading step towards the player every 4 frames, the slots spread over the 4 frames. The direction to the player comes from comparing |dy| with |dx| at the 22.5° boundaries (ratios 1/5, 2/3, 3/2, 5), no atan table. Exactly behind turns clockwise. A new hostile starts heading straight at the player. The 16 velocities are built at galaxy start (speed x cos / 127).
+- Spawn "at least 4 tiles away" uses the spec's 9x9 box: a star counts as far when its column or row differs by 5 or more from the tile under the player's centre.
+- **A hurled hostile keeps its slot (and sprite) until it explodes**, so it still counts towards the 6. A spawn that is due waits for that. Spec §7 updated.
+- Hurled hostiles are not affected by explosions they fly through (they are already scored and explode at the end anyway). The spec didn't say; easy to change. Spec §7 updated.
+- Phase 4 has no respawn: like an explosion, each hostile takes at most one life (it then passes over the player). Phase 5 replaces this with the death sequence and the 2 s of safety.
+- The hurl direction uses the speed the player moved with that frame (also during a knockback); standing still, it is away from the player (nearest of 8, as the bounce). Hurl speed 96 subpx, diagonal 68. The explosion is on the tile under the box centre.
+- `player.boosted` (the boost ran this frame) now decides boosted star hits and hurls. Before, the boost's 75th frame counted as a normal hit; now it is boosted.
+- A +1 hit on a warning star shows the hit color until the next flash step (the flash alternates red with the star's own color every 4 frames).
+- Chain: alive while an explosion runs, a star is in a countdown started by an explosion (`stars.from_blast`), or a hurl is flying; checked once at the end of the frame. Invincibility joins in phase 6.
+- **Frame time.** The first build dropped frames at galaxy 11 with 6 hostiles. Measured per routine with a CIA timer and fixed:
+  - `hostiles.move`, the hostiles' sprite shadow writes, the star scan in `stars.update` (`next_busy`) and the spawn scan (`scan_idle`) are inline assembly. `video.set_sprite` uses a bit table. The explosion checks return at once when no explosion is running (`explode.live`). The hurl touch checks look at 4 tiles directly.
+  - At most one explosion starts per frame: a further supernova that is due goes off a frame later, and a hurled hostile whose flight is over waits in place for a frame. Tiles under an ended explosion are restored through a queue, one explosion per frame (the danger still ends on time). These delays are 1-2 frames, too short to see. Spec §6 updated.
+  - Result at galaxy 11 (35 stars), 6 hostiles gathered on the player and hurled, 40 s scripted: 0 dropped frames; a normal frame takes about 113 raster lines, the slowest 272 of 312. That leaves about 40 lines in the worst frame for later phases (quasar, 3-frame explosion animation, 45 stars), so the explosion animation will need care.
+- Hostile look is placeholder: red (2), spinning every 3 frames, every frame while hurled.
+- Designer played the build (2026-10-17): approved. The hostile warning visuals may be tweaked later.
+- Self-tests (`main.TEST` with `input.SCRIPTED` and `main.DEBUG_HUD`): 11 spawns in galaxy 1, 12 spawns in galaxy 11 with boosts into the pack, 13 contact death, 14 hurl in the open, 15 hurl into another hostile, 16 hurl explosion next to a star, 17 supernova kills two hostiles, 18 hurl into a stationary star. Tests 1-10 run with spawns off. With the debug HUD on, the normal HUD values no longer draw over the readouts; tests 11-18 redraw them every 8th frame.
+- Results: test 11: warnings at frames 300, 600, 900, 1200, 1500, 1800, then 6 active and no more. Test 12 (galaxy 11): every 50 frames up to 6 by frame 300; after the boost at frame 600 the next spawn came at 614, when the first hurled one exploded and freed its slot; max active 6, 0 dropped frames. Test 13: lives 3 -> 2, once. Test 14: hurled at box x 185, exploded at 281 (96 px) 16 frames later, score 500. Test 15: exploded on touching the second hostile after 6 frames (x 185 -> 221); both destroyed, score 500 + 1,000, chain 2. Test 16: the end-of-flight explosion at x 281 put star 1 (tile 18,4, not touched) into its countdown; it went supernova 100 frames later. Test 18: exploded on touching star 1 after 13 frames (x 185 -> 263) and started its countdown. Test 17: supernova 100 at x1 (raises to x2), then the two hostiles in it 500 x2 and 1,000 x2: 3,100. Tests 1-10 give the same numbers as before.
 
 ## Phase 5: Game flow
 **Status:** not started

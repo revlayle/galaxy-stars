@@ -5,6 +5,7 @@
 %import player
 %import explode
 %import score
+%import hostiles
 
 stars {
     const ubyte MAX = 45
@@ -13,7 +14,7 @@ stars {
     const ubyte FREE_ROW = 4            ; rows 4-7
     const ubyte SPECK_ONE_IN = 4        ; about one empty tile in four has a speck [TUNE]
 
-    ; states (spec section 4); WARNING is used from phase 4
+    ; states (spec section 4)
     const ubyte IDLE = 0
     const ubyte WARNING = 1
     const ubyte COUNTDOWN = 2
@@ -32,6 +33,9 @@ stars {
     ; countdown flash: white and black (the star's glow stays) [art phase]
     const ubyte FLASH_ON = 1
     const ubyte FLASH_OFF = 0
+    ; turning hostile (spec section 7): flashes red for 1 s, alternating with its own color every 4 frames
+    const ubyte WARNING_FRAMES = 50
+    const ubyte WARNING_COLOR = 2
 
     ubyte[MAX] col
     ubyte[MAX] row
@@ -41,8 +45,16 @@ stars {
     ubyte[MAX] timer
     ubyte[MAX] no_hit                   ; frames before this star can count a hit again
     ubyte[MAX] shown                    ; color RAM value it is drawn with (MC bit included)
+    bool[MAX] from_blast                ; COUNTDOWN started by an explosion (keeps the hostile chain alive)
     ubyte count
-    ubyte left                          ; stars not destroyed yet (spec section 4; hostiles add in phase 4)
+    ubyte left                          ; stars not destroyed yet: stationary stars plus active hostiles
+    ubyte warnings                      ; stars in WARNING
+    ubyte blast_countdowns              ; stars in a COUNTDOWN started by an explosion, counted by update()
+    bool novas_due                      ; a countdown reached 0: update() makes it go supernova next frame
+    ubyte[MAX] @shared pick_far         ; pick_hostile() candidates, filled by scan_idle()
+    ubyte[MAX] @shared pick_any
+    ubyte @shared n_far
+    ubyte @shared n_any
 
     sub seed() {
         cx16.r0 = mkword(c64.RASTER, c64.CIA1TAH)
@@ -100,6 +112,9 @@ stars {
         sys.memset(&video.tiles, len(video.tiles), 0)
         count = 0
         left = 0
+        warnings = 0
+        blast_countdowns = 0
+        novas_due = false
     }
 
     sub add(ubyte c, ubyte r, ubyte k) {
@@ -163,7 +178,7 @@ stars {
             return
         no_hit[i] = NO_HIT_FRAMES
         if state[i] != COUNTDOWN {
-            if player.boost_left != 0
+            if player.boosted
                 hit(i, BOOST_HITS)
             else
                 hit(i, 1)
@@ -188,11 +203,16 @@ stars {
             return false
         start_countdown(i)
         timer[i] += extra
+        from_blast[i] = true
         return true
     }
 
     sub start_countdown(ubyte i) {
+        ; Also ends a warning: the star goes supernova instead of hostile.
+        if state[i] == WARNING
+            warnings--
         state[i] = COUNTDOWN
+        from_blast[i] = false
         hits[i] = HITS_TO_NOVA
         timer[i] = COUNTDOWN_FRAMES
         set_color(i, FLASH_ON)
@@ -216,24 +236,46 @@ stars {
     }
 
     sub update() {
-        ; Once per frame: supernovas whose countdown ended, then hit lockouts, countdown timers and flashing.
-        ; Two passes, so a countdown started by an explosion in the first pass also counts this frame:
-        ; every countdown lasts COUNTDOWN_FRAMES frames, including the frame it started.
-        ubyte i = 0
-        while i < count {
-            if state[i] == COUNTDOWN and timer[i] == 0
-                supernova(i)
-            i++
+        ; Once per frame: supernovas whose countdown ended last frame, then hit lockouts, warnings, countdown
+        ; timers and flashing. Supernovas go first, so a countdown started by their explosion also counts this
+        ; frame: every countdown lasts COUNTDOWN_FRAMES frames, including the frame it started.
+        ubyte i
+        ; At most one explosion start per frame here (frame time): a further supernova waits a frame.
+        if novas_due {
+            novas_due = false
+            i = 0
+            while i < count {
+                if state[i] == COUNTDOWN and timer[i] == 0 {
+                    if explode.starts != 0 {
+                        novas_due = true
+                        break
+                    }
+                    supernova(i)
+                }
+                i++
+            }
         }
         i = 0
-        while i < count {
-            if no_hit[i] != 0
-                no_hit[i]--
-            if state[i] == COUNTDOWN {
-                timer[i]--
-                ubyte phase = timer[i] >> 3
-                if timer[i] <= FAST_FLASH
-                    phase = timer[i] >> 1
+        blast_countdowns = 0
+        repeat {
+            i = next_busy(i)
+            if i == 255
+                break
+            if state[i] == WARNING
+                warning(i)
+            else {
+                if from_blast[i]
+                    blast_countdowns++
+                ubyte t = timer[i]
+                if t != 0 {
+                    t--
+                    timer[i] = t
+                    if t == 0
+                        novas_due = true
+                }
+                ubyte phase = t >> 3
+                if t <= FAST_FLASH
+                    phase = t >> 1
                 if phase & 1 == 0
                     set_color(i, FLASH_ON)
                 else
@@ -241,6 +283,119 @@ stars {
             }
             i++
         }
+    }
+
+    asmsub next_busy(ubyte from @X) clobbers(X) -> ubyte @A {
+        ; From star `from` on: counts down the hit lockouts (no_hit) and returns the first star in WARNING or
+        ; COUNTDOWN (its lockout counted down too), or 255 when there is none. Assembly: it runs over every star
+        ; each frame.
+        %asm {{
+-           cpx  p8b_stars.p8v_count
+            bcs  _none
+            lda  p8b_stars.p8v_no_hit,x
+            beq  +
+            dec  p8b_stars.p8v_no_hit,x
++           lda  p8b_stars.p8v_state,x
+            cmp  #p8b_stars.p8c_WARNING
+            beq  _found
+            cmp  #p8b_stars.p8c_COUNTDOWN
+            beq  _found
+            inx
+            bne  -
+_none
+            lda  #255
+            rts
+_found
+            txa
+            rts
+        }}
+    }
+
+    sub start_warning(ubyte i) {
+        state[i] = WARNING
+        timer[i] = WARNING_FRAMES
+        warnings++
+        set_color(i, WARNING_COLOR)
+    }
+
+    sub warning(ubyte i) {
+        ; Flashing, then the tile is cleared and a hostile star takes its place (`left` stays the same).
+        timer[i]--
+        if timer[i] == 0 {
+            state[i] = GONE
+            warnings--
+            ubyte idx = video.row_start[row[i]]
+            idx += col[i]
+            video.tiles[idx] = 0
+            if explode.cover[idx] == 0
+                video.draw_tile(col[i], row[i])
+            hostiles.appear(col[i], row[i])
+        } else if (timer[i] >> 2) & 1 == 0
+            set_color(i, WARNING_COLOR)
+        else
+            set_color(i, video.star_color[kind[i]])
+    }
+
+    sub pick_hostile() -> ubyte {
+        ; A random IDLE star outside the 9x9 tiles around the player (the tile under the player's centre),
+        ; else any IDLE star. 255 = none.
+        scan_idle(lsb((player.x + 6) >> 4), (player.y + 6) >> 4)
+        if n_far != 0
+            return pick_far[rand_below(n_far)]
+        if n_any != 0
+            return pick_any[rand_below(n_any)]
+        return 255
+    }
+
+    asmsub scan_idle(ubyte pc @A, ubyte pr @Y) clobbers(A, X, Y) {
+        ; IDLE stars into pick_any (n_any), and those at least hostiles.FAR tiles from tile (pc, pr) in either
+        ; direction into pick_far (n_far). Assembly: it runs over every star.
+        %asm {{
+_pc = P8ZP_SCRATCH_B1
+_pr = P8ZP_SCRATCH_REG
+            sta  _pc
+            sty  _pr
+            lda  #0
+            sta  p8b_stars.p8v_n_far
+            sta  p8b_stars.p8v_n_any
+            ldx  #0
+_loop
+            cpx  p8b_stars.p8v_count
+            bcs  _done
+            lda  p8b_stars.p8v_state,x
+            cmp  #p8b_stars.p8c_IDLE
+            bne  _next
+            txa
+            ldy  p8b_stars.p8v_n_any
+            sta  p8b_stars.p8v_pick_any,y
+            inc  p8b_stars.p8v_n_any
+            lda  p8b_stars.p8v_col,x
+            sec
+            sbc  _pc
+            bcs  +
+            eor  #255
+            adc  #1                     ; carry is clear: negate
++           cmp  #p8b_hostiles.p8c_FAR
+            bcs  _far
+            lda  p8b_stars.p8v_row,x
+            sec
+            sbc  _pr
+            bcs  +
+            eor  #255
+            adc  #1
++           cmp  #p8b_hostiles.p8c_FAR
+            bcc  _next
+_far
+            txa
+            ldy  p8b_stars.p8v_n_far
+            sta  p8b_stars.p8v_pick_far,y
+            inc  p8b_stars.p8v_n_far
+_next
+            inx
+            jmp  _loop
+_done
+            rts
+        }}
     }
 
     sub supernova(ubyte i) {

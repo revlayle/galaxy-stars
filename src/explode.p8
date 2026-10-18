@@ -3,6 +3,8 @@
 ; `cover` counts the explosions over each tile: star color changes skip covered tiles, and a tile is
 ; redrawn from the map only when its last explosion ends.
 ; Stars caught by one explosion explode one after another: in random order, each STAGGER frames after the last.
+; Frame time: the tiles of an ended explosion are restored through a queue, one explosion per frame (the danger
+; ends on time); stars.update starts at most one supernova per frame (`starts`).
 
 %import video
 %import stars
@@ -20,7 +22,13 @@ explode {
     ubyte[MAX] timer                    ; frames left, 0 = free slot
     bool[MAX] hit_player                ; this explosion already took a life (phase 3: no respawn yet)
     ubyte started                       ; explosions started (debug readout)
-    ubyte[8] caught_stars               ; stars in the area of the explosion being started
+    ubyte starts                        ; explosions started this frame
+    ubyte live                          ; explosions running
+    const ubyte QUEUE = 16
+    ubyte[QUEUE] queue_col              ; centres of ended explosions whose tiles are still to restore
+    ubyte[QUEUE] queue_row
+    ubyte queued
+    ubyte[9] caught_stars               ; stars in the area of the explosion being started (a hurl's centre tile can hold one)
 
     ; area of the current slot, set by area()
     ubyte c0
@@ -31,19 +39,27 @@ explode {
     sub clear() {
         sys.memset(&cover, len(cover), 0)
         sys.memset(&timer, MAX, 0)
+        queued = 0
+        starts = 0
+        live = 0
     }
 
     sub area(ubyte s) {
-        c0 = col[s]
+        area_at(col[s], row[s])
+    }
+
+    sub area_at(ubyte c, ubyte r) {
+        ; The 3x3 tiles around tile (c, r), clipped to the playfield, in c0-c1, r0-r1.
+        c0 = c
         if c0 != 0
             c0--
-        c1 = col[s] + 1
+        c1 = c + 1
         if c1 == video.MAP_W
             c1--
-        r0 = row[s]
+        r0 = r
         if r0 != 0
             r0--
-        r1 = row[s] + 1
+        r1 = r + 1
         if r1 == video.MAP_H
             r1--
     }
@@ -55,6 +71,8 @@ explode {
         timer[s] = FRAMES
         hit_player[s] = false
         started++
+        starts++
+        live++
         area(s)
         ubyte n = 0
         ubyte tr
@@ -68,7 +86,7 @@ explode {
                 video.draw_quad(tc, tr, assets.TILE_EXPLODE_0_TL + part, COLOR)
                 ubyte t = video.tiles[idx]
                 if t != 0 {
-                    caught_stars[n] = t - 1     ; at most 8: the centre tile was cleared
+                    caught_stars[n] = t - 1
                     n++
                 }
             }
@@ -107,8 +125,20 @@ explode {
     }
 
     sub finish(ubyte s) {
+        ; The danger ends now; the tiles are restored from the queue (at once if it is full).
         timer[s] = 0
-        area(s)
+        live--
+        if queued == QUEUE {
+            restore(col[s], row[s])
+            return
+        }
+        queue_col[queued] = col[s]
+        queue_row[queued] = row[s]
+        queued++
+    }
+
+    sub restore(ubyte c, ubyte r) {
+        area_at(c, r)
         ubyte tr
         ubyte tc
         for tr in r0 to r1 {
@@ -130,9 +160,22 @@ explode {
                     finish(s)
             }
         }
+        if queued != 0 {
+            restore(queue_col[0], queue_row[0])
+            queued--
+            ubyte k = 0
+            while k < queued {
+                queue_col[k] = queue_col[k + 1]
+                queue_row[k] = queue_row[k + 1]
+                k++
+            }
+        }
+        starts = 0
     }
 
     sub check_player() {
+        if live == 0
+            return
         ; The area is whole tiles, so box overlap is the same as the player's tile range overlapping it.
         ubyte pc0 = lsb(player.x >> 4)
         ubyte pc1 = lsb((player.x + player.BOX - 1) >> 4)

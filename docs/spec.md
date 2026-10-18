@@ -97,6 +97,7 @@ Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-7), `state`,
 
 Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left of the 24x21 frame), `x_frac`, `y_frac`, `byte vx, vy`, `state`, `anim_frame`, `anim_timer`, `spin_dir`.
 - The player keeps its own variables in `player.p8`, and its `x`, `y` are the top-left of its 13 x 13 collision box (frame pixel 4,4), so the box clamp is `x 0..307`, `y 0..179`. The sprite frame starts 4 px up and left of it.
+- Hostiles have their own arrays in `hostiles.p8` (slot 0-5 = sprite 1-6). Their `x`, `y` are the top-left of the 12 x 12 box, also at frame pixel 4,4 (clamp `x 0..308`, `y 0..180`). A new hostile's box is the box of the star it came from.
 
 ### Collision boxes [TUNE]
 - Player: 13 x 13 centred in the 21 x 21 art (corners of the star don't count).
@@ -150,20 +151,21 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - **Stationary star** (`IDLE` or `WARNING`) whose tile is in the area: goes straight to `COUNTDOWN` with the full 2 s (the notes: "essentially adding 3 to the counter"). Stars already in `COUNTDOWN` keep their timer.
   - **Staggered chains** (designer, 2026-10-17): when one explosion sends several stars into their countdown, they go off one after another, in random order: the first gets the full 100 frames, each further one 6 frames more (`stars.STAGGER`) **[TUNE]**. This makes the chain reaction visible and keeps the frame rate smooth.
 - Up to 8 explosions at once (list in game RAM) **[TUNE]**; with 45 stars a chain reaction can be wide but each step takes 2 s, so 8 should be plenty. If the list is full, the new explosion takes the oldest slot.
+- Frame time: at most one explosion starts per frame. A further supernova that is due waits a frame, and a hurled hostile whose flight is over waits in place. The tiles under an ended explosion are restored through a queue, one explosion per frame; its danger ends on time.
 
 ## 7. Hostile stars
 
 ### Turning hostile
 - A spawn timer picks a star to go hostile every interval: galaxy 1 = 6.0 s, then 0.5 s less per galaxy, never below 1.0 s (galaxy 11 and up).
   - Interval in frames: `max(50, 300 - 25 * (galaxy - 1))`.
-- Only when fewer than 6 hostile stars (and warnings) are active; otherwise the timer waits at 0 and fires as soon as a slot is free.
+- Only when fewer than 6 hostile stars (and warnings) are active; otherwise the timer waits at 0 and fires as soon as a slot is free. A hurled hostile keeps its slot until it explodes.
 - Which star: a random `IDLE` star at least 4 tiles from the player (in both directions, i.e. outside a 9 x 9 tile box around them), or any `IDLE` star if there is none that far.
 - The chosen star goes to `WARNING`: it flashes red (color RAM, alternating with its own color every 4 frames) for 1 s, then its tile is cleared and a hostile star sprite appears at its position and starts chasing. The original star is gone.
 
 ### Movement [TUNE]
 - Speed per galaxy, as a fraction of the player's normal speed (24): galaxy 1 = 50% (12), galaxy 11 = 120% (29), linear in between: 12, 14, 15, 17, 19, 20, 22, 24, 26, 27, 29.
 - After galaxy 11 the speed stays at 29 (120%).
-- Steering: each hostile has a heading (one of 16 directions) and turns one step towards the player every 4 frames, so they curve after the player and can be dodged rather than tracking perfectly. The 16-direction velocity table is built at galaxy start from the speed.
+- Steering: each hostile has a heading (one of 16 directions) and turns one step towards the player every 4 frames, so they curve after the player and can be dodged rather than tracking perfectly. The 16-direction velocity table is built at galaxy start from the speed. A new hostile starts heading straight at the player; when the player is exactly behind it, it turns clockwise.
 - Hostile stars pass over stationary stars and each other (no collisions between them).
 - The red 4-pointed star spins like the player (left = counter-clockwise, right = clockwise), 6 frames of 15° (a 4-pointed star repeats every 90°).
 
@@ -175,7 +177,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - It explodes early when it touches another hostile star (not one that is itself being hurled) or a stationary star in any state, or when its box reaches a playfield edge. Otherwise it explodes at the end of the flight.
   - The explosion is a normal explosion (§6): the 3 x 3 tiles around the tile under the hurled star's centre, 30 frames, with every effect of a supernova explosion. It can kill the player, destroys hostiles caught in it (chain scoring, §8) and sends stationary stars in it into their countdown, so hurls start chain reactions.
   - It is not a supernova: no 100 points, no multiplier raise, no quasar chance.
-  - While flying it is harmless to the player, spins fast, and can't be hit again.
+  - While flying it is harmless to the player, spins fast, and can't be hit again. Explosions it flies through don't affect it.
   - Every hostile the boosting player touches is hurled, each in its own flight.
 - A hurled hostile scores the next chain step (§8) when it is hit, and counts as destroyed at that moment (`stars_left` goes down then), so the galaxy can be cleared while one is still flying.
 - Player invincible: any hostile touched is destroyed at once and counts in the hostile chain.

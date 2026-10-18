@@ -58,6 +58,9 @@ player {
     byte knock_vx
     byte knock_vy
     ubyte bounces                       ; bounces started (debug readout)
+    byte vx                             ; speed moved with this frame (hostile hurl direction)
+    byte vy
+    bool boosted                        ; the boost was running this frame (hits and hurls count as boosted)
 
     sub init() {
         x = START_X
@@ -71,13 +74,18 @@ player {
         spin_ccw = false
         color = COLOR
         knock_left = 0
+        vx = 0
+        vy = 0
+        boosted = false
     }
 
     sub update() {
         if knock_left != 0 {
             ; knockback: no joystick control (fire presses are ignored too); the boost keeps running
             knock_left--
-            move(knock_vx, knock_vy)
+            vx = knock_vx
+            vy = knock_vy
+            move(vx, vy)
             spin()
         } else {
             if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 {
@@ -86,8 +94,8 @@ player {
             }
 
             ubyte dir = input.held & %1111
-            byte vx = dir_vx[dir]
-            byte vy = dir_vy[dir]
+            vx = dir_vx[dir]
+            vy = dir_vy[dir]
             if boost_left != 0 {
                 vx = boost_vx[dir]
                 vy = boost_vy[dir]
@@ -103,6 +111,7 @@ player {
         }
 
         color = COLOR
+        boosted = boost_left != 0
         if boost_left != 0 {
             color = glow_colors[(boost_left >> 1) & 3]
             boost_left--
@@ -144,9 +153,9 @@ player {
         bounces++
     }
 
-    sub move(byte vx, byte vy) {
+    sub move(byte mx, byte my) {
         ; frac + speed: the whole pixels (arithmetic shift, so negative sums step left/up) and the new fraction
-        byte t = (x_frac as byte) + vx
+        byte t = (x_frac as byte) + mx
         x_frac = (t as ubyte) & 15
         byte d = t >> 4
         if d < 0 {
@@ -164,7 +173,7 @@ player {
             }
         }
 
-        t = (y_frac as byte) + vy
+        t = (y_frac as byte) + my
         y_frac = (t as ubyte) & 15
         d = t >> 4
         if d < 0 {

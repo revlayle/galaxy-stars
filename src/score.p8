@@ -10,6 +10,9 @@ score {
     const ubyte FRAMES_PER_SECOND = 50
     ; [TUNE] frames before the multiplier drops by 1, indexed by its current value (x2 to x9)
     ubyte[MAX_MULT + 1] drop_frames = [0, 0, 175, 157, 139, 121, 104, 86, 68, 50]
+    ; hostile chain steps in hundreds, BCD: 500, 1000, 2000, ... 64000 (the cap from the 8th kill on) [TUNE]
+    ubyte[8] chain_lo = [$05, $10, $20, $40, $80, $60, $20, $40]
+    ubyte[8] chain_mid = [$00, $00, $00, $00, $00, $01, $03, $06]
 
     ; score in hundreds, 6 BCD digits (the HUD appends "00")
     ubyte points_hi
@@ -21,6 +24,7 @@ score {
     ubyte galaxy                        ; 1-based
     ubyte time                          ; BCD seconds left
     ubyte time_frames                   ; frames left in the current second
+    ubyte chain                         ; hostile kills in the current chain
 
     sub new_game() {
         points_hi = 0
@@ -28,6 +32,7 @@ score {
         points_lo = 0
         mult = 1
         mult_timer = 0
+        chain = 0
         lives = START_LIVES
         galaxy = 1
         video.hud_score(0, 0, 0)
@@ -38,7 +43,18 @@ score {
     sub start_galaxy() {
         time = GALAXY_TIME
         time_frames = FRAMES_PER_SECOND
+        chain = 0
         video.hud_time(time)
+    }
+
+    sub chain_kill() {
+        ; A hostile destroyed: the next chain step times the multiplier.
+        ubyte step = chain
+        if step >= len(chain_lo)
+            step = len(chain_lo) - 1
+        add(chain_lo[step], chain_mid[step])
+        if chain != 255
+            chain++
     }
 
     sub supernova() {

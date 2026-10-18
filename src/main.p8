@@ -1,5 +1,6 @@
-; Galaxy Stars, a C64 action game. Phase 3: galaxy 1 with star hits, supernovas, chain reactions,
-; score, multiplier, lives (count only) and the galaxy timer.
+; Galaxy Stars, a C64 action game. Phase 4: galaxy 1 with star hits, supernovas, chain reactions,
+; hostile stars (spawn, chase, boost hurl), score with hostile chains, multiplier, lives (count only)
+; and the galaxy timer.
 
 %import video
 %import input
@@ -7,6 +8,7 @@
 %import player
 %import explode
 %import score
+%import hostiles
 %zeropage basicsafe
 %memtop $C000
 
@@ -15,7 +17,10 @@ main {
     const bool DEBUG_HUD = false        ; test readouts in place of the HUD row
     ; scripted test (needs input.SCRIPTED): 1 move, 2 boost, 3 clamp, 4 spin (no stars),
     ; 5 three hits, 6 boosted hit, 7 chain reaction, 8 caught in an explosion, 9 chain with multiplier log,
-    ; 10 one explosion catching 5 stars (staggered)
+    ; 10 one explosion catching 5 stars (staggered),
+    ; 11 hostile spawns in galaxy 1, 12 hostile spawns in galaxy 11 (then a few boosts), 13 contact death,
+    ; 14 hurl in the open, 15 hurl into another hostile, 16 hurl explosion next to a star,
+    ; 17 supernova kills 2 hostiles, 18 hurl into a stationary star
     const ubyte TEST = 0
 
     sub start() {
@@ -24,15 +29,22 @@ main {
         stars.seed()
         video.draw_hud()
         score.new_game()
+        if TEST == 12
+            score.galaxy = 11
         explode.clear()
-        if TEST == 0
+        if TEST == 0 or TEST == 11 or TEST == 12
             stars.place(stars.for_galaxy(score.galaxy))
         else
             test_layout()
         video.draw_playfield()
         score.start_galaxy()
+        hostiles.start_galaxy(score.galaxy)
         player.init()
         player.draw()
+        if TEST != 0 and TEST <= 10
+            hostiles.spawn_timer = $FFFF    ; tests from before the hostiles: none spawn
+        if TEST >= 13
+            test_hostiles()
         if input.SCRIPTED
             select_script()
 
@@ -41,13 +53,27 @@ main {
             input.read()
             score.update()              ; first: a multiplier raised this frame keeps its full time
             player.update()
+            hostiles.update()
             stars.player_contact()
+            hostiles.check_player()
             explode.check_player()
+            hostiles.check_explosions()
             stars.update()
             explode.update()
+            ; the hostile chain lives while an explosion, a countdown it started, or a hurl is going on
+            if explode.live == 0 and hostiles.flying == 0 and stars.blast_countdowns == 0
+                score.chain = 0
             player.draw()
-            if DEBUG_HUD
+            hostiles.draw()
+            if DEBUG_HUD {
+                ; the next frame IRQ came during this frame's work (not counted after a readout redraw,
+                ; which can start the frame late)
+                if video.frame_ready and not dbg_drew
+                    dbg_missed++
+                dbg_prev_drew = dbg_drew
+                dbg_drew = false
                 debug_hud()
+            }
         }
     }
 
@@ -71,6 +97,12 @@ main {
     ubyte[] script_boost_hit = [50, 0, 1, 8 | 16, 30, 8, 60, 4, 0, 0]
     ; boosted hit, then stay next to the star (caught when it explodes)
     ubyte[] script_caught = [50, 0, 1, 8 | 16, 10, 8, 0, 0]
+    ubyte[] script_still = [0, 0]
+    ; stand still while 6 hostiles gather, then boost right, left and up into them
+    ubyte[] script_gather = [250, 0, 250, 0, 100, 0, 1, 8 | 16, 40, 8, 60, 0, 1, 4 | 16, 60, 4, 60, 0,
+                             1, 1 | 16, 40, 1, 0, 0]
+    ; wait for the hostile from tile (15,5) to come close, then boost right into it for 8 frames
+    ubyte[] script_hurl = [120, 0, 1, 8 | 16, 7, 8, 0, 0]
 
     sub test_layout() {
         stars.clear()
@@ -92,8 +124,43 @@ main {
                 stars.add(13, 5, 4)
                 stars.add(13, 6, 5)
             }
+            13, 14 -> stars.add(15, 5, 0)
+            15 -> {
+                stars.add(15, 5, 0)
+                stars.add(18, 5, 1)
+            }
+            16 -> {
+                stars.add(15, 5, 0)
+                stars.add(18, 4, 1)         ; in the area where the hurl ends, out of the flight path
+            }
+            17 -> {
+                stars.add(12, 5, 0)         ; hit by the player
+                stars.add(12, 4, 1)         ; hostiles that stand still in its explosion area
+                stars.add(13, 6, 2)
+            }
+            18 -> {
+                stars.add(15, 5, 0)
+                stars.add(17, 5, 1)         ; in the flight path
+            }
         }
         stars.place_specks()
+    }
+
+    sub test_hostiles() {
+        ; No timed spawns: the test picks which stars turn hostile.
+        hostiles.spawn_timer = $FFFF
+        when TEST {
+            15 -> {
+                stars.start_warning(0)
+                stars.start_warning(1)
+            }
+            17 -> {
+                stars.start_warning(1)
+                stars.start_warning(2)
+                hostiles.set_speed(0)
+            }
+            else -> stars.start_warning(0)
+        }
     }
 
     sub select_script() {
@@ -105,6 +172,10 @@ main {
             5 -> input.script = &script_hits
             6, 7, 9, 10 -> input.script = &script_boost_hit
             8 -> input.script = &script_caught
+            11, 13 -> input.script = &script_still
+            12 -> input.script = &script_gather
+            14, 15, 16, 18 -> input.script = &script_hurl
+            17 -> input.script = &script_boost_hit
         }
     }
 
@@ -126,6 +197,15 @@ main {
     ubyte dbg_prev_mult = 1
     uword[6] dbg_mult_frame             ; frames of the first 6 multiplier changes
     ubyte dbg_mult_changes
+    ubyte dbg_prev_spawned
+    uword[6] dbg_spawn_frame            ; frames of the last 6 spawns (warning starts), oldest first
+    ubyte dbg_max_active
+    ubyte dbg_max_lines                 ; most raster lines a frame's work took
+    ubyte dbg_missed                    ; frames where the work took longer than a frame
+    bool dbg_drew                       ; the readouts were redrawn this frame
+    bool dbg_prev_drew
+    ubyte dbg_prev_blasts
+    uword dbg_blast_frame
 
     sub debug_hud() {
         ; Hex readouts in the HUD row. Common: x, y, frames; then fields for the selected TEST.
@@ -157,6 +237,10 @@ main {
             dbg_history[5] = player.anim_frame
         }
 
+        if TEST >= 11 {
+            hostile_readouts()
+            return
+        }
         if TEST >= 5 {
             star_readouts()
             return
@@ -251,17 +335,81 @@ main {
         hex_byte(38, player.bounces)
     }
 
-    sub hex_byte(ubyte col, ubyte value) {
+    sub hostile_readouts() {
+        ; TEST 11-12: frames of the last 6 spawns | max hostiles+warnings | now | max raster lines per frame |
+        ;             frames that took too long
+        ; TEST 13-18: frames | lives | score (hundreds) | mult | chain | hurl x | blast x | blast frame |
+        ;             state+hits of star 1 | hostile slots used | kills
+        ubyte i
+        if hostiles.spawned != dbg_prev_spawned {
+            dbg_prev_spawned = hostiles.spawned
+            for i in 0 to 4
+                dbg_spawn_frame[i] = dbg_spawn_frame[i + 1]
+            dbg_spawn_frame[5] = dbg_frames
+        }
+        ubyte active = hostiles.used + stars.warnings
+        if active > dbg_max_active
+            dbg_max_active = active
+        if hostiles.blasts != dbg_prev_blasts {
+            dbg_prev_blasts = hostiles.blasts
+            dbg_blast_frame = dbg_frames
+        }
+        ; work starts at the frame IRQ (line 251); PAL has 312 lines
+        uword line = c64.RASTER
+        if c64.SCROLY & $80 != 0
+            line += 256
+        if line >= video.FRAME_IRQ_LINE
+            line -= video.FRAME_IRQ_LINE
+        else
+            line += 312 - video.FRAME_IRQ_LINE
+        if line > 255
+            line = 255
+        if dbg_frames > 2 {
+            if lsb(line) > dbg_max_lines
+                dbg_max_lines = lsb(line)
+        }
+
+        if dbg_frames & 7 != 0
+            return                      ; redraw every 8th frame, so the readouts take little frame time
+        dbg_drew = true
+        if TEST <= 12 {
+            for i in 0 to 5
+                hex_word(i * 5, dbg_spawn_frame[i])
+            hex_digit(30, dbg_max_active)
+            hex_digit(32, active)
+            hex_byte(34, dbg_max_lines)
+            hex_byte(37, dbg_missed)
+            return
+        }
+        hex_word(0, dbg_frames)
+        hex_digit(5, score.lives)
+        hex_byte(7, score.points_hi)
+        hex_byte(9, score.points_mid)
+        hex_byte(11, score.points_lo)
+        hex_digit(14, score.mult)
+        hex_digit(16, score.chain)
+        hex_word(18, hostiles.hurl_x)
+        hex_word(23, hostiles.blast_x)
+        hex_word(28, dbg_blast_frame)
+        if stars.count > 1 {
+            hex_digit(33, stars.state[1])
+            hex_digit(34, stars.hits[1])
+        }
+        hex_digit(36, hostiles.used)
+        hex_digit(38, hostiles.kills)
+    }
+
+    sub hex_byte(uword col, ubyte value) {
         hex_digit(col, value >> 4)
         hex_digit(col + 1, value & 15)
     }
 
-    sub hex_word(ubyte col, uword value) {
+    sub hex_word(uword col, uword value) {
         hex_byte(col, msb(value))
         hex_byte(col + 2, lsb(value))
     }
 
-    sub hex_digit(ubyte col, ubyte n) {
+    sub hex_digit(uword col, ubyte n) {
         ; screen codes: '0'-'9' = 48-57, 'a'-'f' = 1-6
         @(video.SCREEN + col) = if n < 10 n + 48 else n - 9
     }
