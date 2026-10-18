@@ -77,7 +77,7 @@ Background specks have their own map, `&ubyte[240] specks = $C500`: 0 = none, el
 Explosion cover map, `&ubyte[240] cover = $C600`: the number of active explosions drawn over each tile. Star color changes skip covered tiles, and a tile is redrawn from the tile map when its last explosion ends.
 
 ### Stationary stars
-Parallel arrays, up to 45 entries: `col`, `row`, `kind` (art type 0-7), `state`, `hits` (supernova counter), `timer` (frames). States:
+Parallel arrays, up to 55 entries: `col`, `row`, `kind` (art type 0-7), `state`, `hits` (supernova counter), `timer` (frames). States:
 
 | State | Meaning |
 |---|---|
@@ -103,7 +103,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Player: 13 x 13 centred in the 21 x 21 art (corners of the star don't count).
 - Hostile star: 12 x 12 centred in its art.
 - Stationary star: 12 x 12 centred in its 16 x 16 tile.
-- Explosion: the 3 x 3 tiles around the exploding star, 48 x 48 px, clipped to the playfield.
+- Explosion: the 3 x 3 tiles around the exploding star, 48 x 48 px, clipped to the playfield, for stationary stars. For the player and hostile stars only its round core counts (§6).
 - All checks are box overlap math in software. Hardware sprite collision registers are not used.
 
 ## 5. Player
@@ -146,26 +146,27 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Explosions also come from hostiles hurled by a boost (§7); they behave the same.
 - When a countdown ends, the star explodes: tile cleared, star `GONE`, an explosion starts covering the 3 x 3 tiles around it.
 - An explosion lasts 0.6 s = 30 frames and is dangerous for its whole duration **[TUNE]**. It is drawn with explosion chars over the 3 x 3 tiles (animated, expanding then fading) and the tiles are restored afterwards.
-- While an explosion is active, anything in its area:
-  - **Player** (hurt box overlaps the area): loses a life (§8), unless invincible.
-  - **Hostile star**: destroyed, scores in the hostile chain (§8). Also a hostile flying into an explosion that is still active.
-  - **Stationary star** (`IDLE` or `WARNING`) whose tile is in the area: goes straight to `COUNTDOWN` with the full 2 s (the notes: "essentially adding 3 to the counter"). Stars already in `COUNTDOWN` keep their timer.
+- While an explosion is active:
+  - **Round core** (designer, 2026-10-18): the player and hostile stars are hit only when their centre is within 22 px of the explosion's centre (the centre of its centre tile), measured as the longer axis distance plus half the shorter, an octagon close to a circle **[TUNE]** `explode.REACH`. The bright part of the art is about 36 px across. Before, any overlap of the 13 x 13 box with the 48 x 48 square counted, corners included, so the player died touching only the empty corners or the faint fringe. A hostile diagonally next to the exploding star (centre about 23 px away) is now outside the core.
+  - **Player** in the core: loses a life (§8), unless invincible.
+  - **Hostile star** in the core: destroyed, scores in the hostile chain (§8). Also a hostile flying into an explosion that is still active.
+  - **Stationary star** (`IDLE` or `WARNING`) whose tile is in the 3 x 3 area: goes straight to `COUNTDOWN` with the full 2 s (the notes: "essentially adding 3 to the counter"). Stars already in `COUNTDOWN` keep their timer.
   - **Staggered chains** (designer, 2026-10-17): when one explosion sends several stars into their countdown, they go off one after another, in random order: the first gets the full 100 frames, each further one 6 frames more (`stars.STAGGER`) **[TUNE]**. This makes the chain reaction visible and keeps the frame rate smooth.
-- Up to 8 explosions at once (list in game RAM) **[TUNE]**; with 45 stars a chain reaction can be wide but each step takes 2 s, so 8 should be plenty. If the list is full, the new explosion takes the oldest slot.
+- Up to 8 explosions at once (list in game RAM) **[TUNE]**; with 55 stars a chain reaction can be wide but each step takes 2 s, so 8 should be plenty. If the list is full, the new explosion takes the oldest slot.
 - Frame time: at most one explosion starts per frame. A further supernova that is due waits a frame, and a hurled hostile whose flight is over waits in place. The tiles under an ended explosion are restored through a queue, one explosion per frame; its danger ends on time.
 
 ## 7. Hostile stars
 
 ### Turning hostile
-- A spawn timer picks a star to go hostile every interval: galaxy 1 = 6.0 s, then 0.5 s less per galaxy, never below 1.0 s (galaxy 11 and up).
-  - Interval in frames: `max(50, 300 - 25 * (galaxy - 1))`.
+- A spawn timer picks a star to go hostile every interval: galaxy 1 = 6.0 s, then 0.25 s less per galaxy, never below 1.0 s (galaxy 21 and up). Designer, 2026-10-18: the ramp was twice as steep (1.0 s at galaxy 11) and got hard suddenly around galaxy 7.
+  - Interval in frames: `max(50, 300 - 12.5 * (galaxy - 1))`, the half frame rounded up.
 - Only when fewer than 6 hostile stars (and warnings) are active; otherwise the timer waits at 0 and fires as soon as a slot is free. A hurled hostile keeps its slot until it explodes.
 - Which star: a random `IDLE` star at least 4 tiles from the player (in both directions, i.e. outside a 9 x 9 tile box around them), or any `IDLE` star if there is none that far.
 - The chosen star goes to `WARNING`: it flashes red (color RAM, alternating with its own color every 4 frames) for 1 s, then its tile is cleared and a hostile star sprite appears at its position and starts chasing. The original star is gone.
 
 ### Movement [TUNE]
-- Speed per galaxy, as a fraction of the player's normal speed (24): galaxy 1 = 50% (12), galaxy 11 = 120% (29), linear in between: 12, 14, 15, 17, 19, 20, 22, 24, 26, 27, 29.
-- After galaxy 11 the speed stays at 29 (120%).
+- Speed per galaxy, as a fraction of the player's normal speed (24): galaxy 1 = 50% (12), galaxy 21 = 120% (29), linear in between: 12, 13, 14, 15, 15, 16, 17, 18, 19, 20, 20, 21, 22, 23, 24, 25, 25, 26, 27, 28, 29 (designer, 2026-10-18: was galaxy 11).
+- After galaxy 21 the speed stays at 29 (120%).
 - Steering: each hostile has a heading (one of 16 directions) and turns one step towards the player every 4 frames, so they curve after the player and can be dodged rather than tracking perfectly. The 16-direction velocity table is built at galaxy start from the speed. A new hostile starts heading straight at the player; when the player is exactly behind it, it turns clockwise.
 - Hostile stars pass over stationary stars and each other (no collisions between them).
 - The red 4-pointed star spins like the player (left = counter-clockwise, right = clockwise), 6 frames of 15° (a 4-pointed star repeats every 90°).
@@ -202,7 +203,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Supernova event: the 100 is multiplied by the multiplier *before* the +1.
 - Galaxy clear bonus: multiplied by the multiplier like every other event; the multiplier resets to x1 after it is added.
 - **Chain:** one shared chain counter for every hostile kill: supernova kills, boost hurls, kills by a hurled star's explosion and invincibility kills all add to it, and each kill scores the next doubling step. The chain stays alive while any of these is going on: an explosion is active, a star is in a countdown that was started by an explosion, a hurled hostile is still flying, or the player is invincible. When none of them is, the chain resets, so the next kill scores 500 again. **[TUNE]**
-- Chain cap: the doubling stops at the 8th kill (64,000); further kills in the chain score 64,000 each **[TUNE]**.
+- Chain cap: the doubling stops at the 6th kill (16,000), the most hostiles at once; further kills in the chain score 16,000 each **[TUNE]**. Designer, 2026-10-18: was the 8th kill (64,000), which made one chain worth 127,500 x multiplier and scores of 600,000+.
 
 ### Multiplier
 - Starts at x1, max x9. Resets to x1 at the end of each galaxy, and at the start of a new game.
@@ -218,14 +219,14 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 
 ### Lives
 - 3 at the start, max 9 (the HUD shows one digit).
-- Extra life every 20,000 points (at 20,000, 40,000, ...), constant `score.EXTRA_LIFE_EVERY` (in hundreds) **[TUNE]**. Past 9 lives, no extra life is given, but the next threshold still moves on.
+- Extra life every 50,000 points (at 50,000, 100,000, ...; designer, 2026-10-18: was 20,000), constant `score.EXTRA_LIFE_EVERY` (in hundreds) **[TUNE]**. Past 9 lives, no extra life is given, but the next threshold still moves on.
 - A life is lost when the player is touched by a hostile star while not boosting, or is caught in an explosion. Invincibility protects from both.
 - **Losing a life** (designer approved):
   - The player sprite flashes/shrinks for 1 s while everything else keeps running (explosions, countdowns, hostiles), then reappears in the centre.
   - The galaxy timer keeps running.
   - The player is safe for 2 s after reappearing (sprite blinks): hostiles pass through them harmlessly and explosions don't hurt. Hitting stars works normally.
   - **Respawn push** (designer, 2026-10-17): when the player reappears, every hostile (not one being hurled) inside the box around the centre, 80 px left and right and 64 px up and down (10 x 8 tiles), is pushed straight out from the centre (nearest of 16 directions) at 6 px/f until it is outside the box; the playfield edges stop it **[TUNE]**. Pushed hostiles are not hurt and score nothing.
-  - **Hold** (designer, 2026-10-17): during the 2 s of safety hostiles hold still (spinning in place), including ones that appear then, and chase again when it ends. Without this, a galaxy 11 hostile (1.8 px/f) gets back to the centre within the 2 s. A hostile counts as inside the push box by its centre; held hostiles keep turning towards the player, so they set off straight at them when the safety ends.
+  - **Hold** (designer, 2026-10-17): during the 2 s of safety hostiles hold still (spinning in place), including ones that appear then, and chase again when it ends. Without this, a hostile at top speed (1.8 px/f) gets back to the centre within the 2 s. A hostile counts as inside the push box by its centre; held hostiles keep turning towards the player, so they set off straight at them when the safety ends.
 - The life is taken at the hit (the HUD shows the new count at once). During the death effect the player has no control and touches nothing; boost and cooldown are cleared. A boost during the 2 s of safety still hurls hostiles (designer, 2026-10-17).
 - No lives left → game over (§11) when the last death effect ends.
 - One score event can pass several extra-life thresholds: a life for each, up to 9. At the maximum score the thresholds stop.
@@ -241,11 +242,11 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - Explosions and hostiles can't hurt the player.
   - The sprite glows through multiple colors rapidly.
   - In the last second of invincibility the glow slows down as a warning.
-- A 1 in 100 chance means a quasar shows up in roughly a third of galaxies at 45 stars and fewer at 15 **[TUNE]** if it should be more common.
+- A 1 in 100 chance means a quasar shows up in roughly a third of galaxies at 45 stars, more at 55, and fewer at 15 **[TUNE]** if it should be more common.
 
 ## 10. Galaxies
 
-- Galaxy `n` has `min(45, 15 + 2 * (n - 1))` stars (45 from galaxy 16).
+- Galaxy `n` has `min(55, 15 + 2 * (n - 1))` stars (55 from galaxy 21; designer, 2026-10-18: was 45 from galaxy 16).
 - Placement: random free tiles, never in the 4 x 4 tiles around the player's start (tile columns 8-11, rows 4-7). Stars may be next to each other (chain reactions).
 - Each star gets a random `kind` (art type 0-7).
 - Background specks: about one empty tile in four shows a faint speck (1-2 px dots in dark grey, grey or blue) in one of its 4 chars **[TUNE]**. Specks are decoration only: they live in the screen, not the tile map, and are redrawn when a tile is restored.
@@ -325,6 +326,7 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - Art budget (designer, 2026-10-17): 8 star kinds and 3 explosion frames, so all chars fit without reuse (§12).
 - Boost vs hostile (designer change, 2026-10-17): instead of flying off the screen, a boosted hostile is hurled about 6 tiles away and explodes like a supernova (can hurt the player, starts chain reactions). It explodes early on touching another star or a playfield edge. The hit scores the chain step; the explosion adds no supernova points or multiplier (§7).
 - Respawn (designer, 2026-10-17): hostiles near the centre are pushed out when the player reappears, so they can't camp the respawn point (§8).
+- Explosion hit area (designer, 2026-10-18): the player and hostile stars are hit by an explosion's round core, not its whole 3 x 3 square; stationary stars still use the square (§6).
 - Bounce trap (designer, 2026-10-18): a star touched during a knockback stops it instead of bouncing again, so the player can't be trapped between two stars (§6).
 - Hurl blasts (designer, 2026-10-18): the player bounces off a hurled hostile; the hostile flies through stationary stars, and through hostiles for its first 8 frames; at a playfield edge it flies off the screen with no explosion. So its explosion no longer catches the player who hurled it (§7).
 

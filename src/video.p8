@@ -80,48 +80,88 @@ video {
         c64.BGCOL2 = COLOR_CHAR_MC2
     }
 
-    sub draw_tile(ubyte col, ubyte row) {
-        ubyte idx = row_start[row] + col
-        ubyte t = tiles[idx]
-        ^^ubyte @zp scr = tile_row_addr[row] + (col << 1)
-        ubyte ch
-        ubyte co
-        if t != 0 {
-            ch = star_char[stars.kind[t - 1]]
-            co = stars.shown[t - 1]
-            scr[0] = ch
-            scr[1] = ch + 1
-            scr[40] = ch + 2
-            scr[41] = ch + 3
-        } else {
-            scr[0] = CHAR_SPACE
-            scr[1] = CHAR_SPACE
-            scr[40] = CHAR_SPACE
-            scr[41] = CHAR_SPACE
-            co = SPECK_COLOR
-            ubyte s = specks[idx]
-            if s != 0
-                scr[quad_offset[s & 3]] = speck_char[(s >> 2) - 1]
-        }
-        scr += COLOR_RAM - SCREEN
-        scr[0] = co
-        scr[1] = co
-        scr[40] = co
-        scr[41] = co
-    }
-
-    sub draw_quad(ubyte col, ubyte row, ubyte ch, ubyte co) {
-        ; Chars ch to ch+3 (TL, TR, BL, BR) in one color over a tile, without touching the tile map.
-        ^^ubyte @zp scr = tile_row_addr[row] + (col << 1)
-        scr[0] = ch
-        scr[1] = ch + 1
-        scr[40] = ch + 2
-        scr[41] = ch + 3
-        scr += COLOR_RAM - SCREEN
-        scr[0] = co
-        scr[1] = co
-        scr[40] = co
-        scr[41] = co
+    asmsub draw_tile(ubyte col @A, ubyte row @Y) clobbers(A, X, Y) {
+        ; One tile from the tile map: a star (its chars in its shown color) or empty space with its speck.
+        ; Assembly: explosions restore 9 tiles at a time (frame time).
+        %asm {{
+_scr = P8ZP_SCRATCH_W1
+_clr = P8ZP_SCRATCH_W2
+            .section BSS
+_co         .byte ?
+            .send BSS
+            tax                         ; col
+            asl  a
+            clc
+            adc  p8b_video.p8v_tile_row_addr_lsb,y
+            sta  _scr
+            sta  _clr
+            lda  p8b_video.p8v_tile_row_addr_msb,y
+            adc  #0
+            sta  _scr+1
+            clc
+            adc  #>(p8b_video.p8c_COLOR_RAM - p8b_video.p8c_SCREEN)
+            sta  _clr+1
+            txa
+            clc
+            adc  p8b_video.p8v_row_start,y
+            tax                         ; tile index
+            lda  p8b_video.p8v_tiles,x
+            beq  _empty
+            tay                         ; star index + 1
+            lda  p8b_stars.p8v_shown-1,y
+            sta  _co
+            ldx  p8b_stars.p8v_kind-1,y
+            lda  p8b_video.p8v_star_char,x
+            ldy  #0
+            sta  (_scr),y
+            clc
+            adc  #1
+            iny
+            sta  (_scr),y
+            adc  #1
+            ldy  #40
+            sta  (_scr),y
+            adc  #1
+            iny
+            sta  (_scr),y
+            jmp  _color
+_empty
+            lda  #p8b_video.p8c_SPECK_COLOR
+            sta  _co
+            lda  #p8b_video.p8c_CHAR_SPACE
+            ldy  #0
+            sta  (_scr),y
+            iny
+            sta  (_scr),y
+            ldy  #40
+            sta  (_scr),y
+            iny
+            sta  (_scr),y
+            lda  p8b_video.p8v_specks,x
+            beq  _color
+            pha
+            and  #3
+            tay
+            lda  p8b_video.p8v_quad_offset,y
+            tay                         ; offset of the speck's char in the tile
+            pla
+            lsr  a
+            lsr  a
+            tax                         ; speck kind + 1
+            lda  p8b_video.p8v_speck_char-1,x
+            sta  (_scr),y
+_color
+            lda  _co
+            ldy  #0
+            sta  (_clr),y
+            iny
+            sta  (_clr),y
+            ldy  #40
+            sta  (_clr),y
+            iny
+            sta  (_clr),y
+            rts
+        }}
     }
 
     sub draw_playfield() {
@@ -171,12 +211,44 @@ video {
         put_score(SCREEN + HUD_SCORE_COL, bcd_hi, bcd_mid, bcd_lo)
     }
 
-    sub put_score(uword addr, ubyte bcd_hi, ubyte bcd_mid, ubyte bcd_lo) {
-        ; A score in hundreds (6 BCD digits) as 8 digits.
-        put_bcd2(addr, bcd_hi)
-        put_bcd2(addr + 2, bcd_mid)
-        put_bcd2(addr + 4, bcd_lo)
-        put_bcd2(addr + 6, 0)
+    asmsub put_score(uword addr @R0, ubyte bcd_hi @A, ubyte bcd_mid @X, ubyte bcd_lo @Y) clobbers(A, X, Y) {
+        ; A score in hundreds (6 BCD digits) as 8 digits at addr. Assembly: redrawn after score events in play.
+        %asm {{
+_p = P8ZP_SCRATCH_W1
+            .section BSS
+_bcd        .byte ?, ?, ?
+            .send BSS
+            sta  _bcd
+            stx  _bcd+1
+            sty  _bcd+2
+            lda  cx16.r0
+            sta  _p
+            lda  cx16.r0+1
+            sta  _p+1
+            ldx  #0
+            ldy  #0
+-           lda  _bcd,x
+            lsr  a
+            lsr  a
+            lsr  a
+            lsr  a
+            ora  #'0'
+            sta  (_p),y
+            iny
+            lda  _bcd,x
+            and  #15
+            ora  #'0'
+            sta  (_p),y
+            iny
+            inx
+            cpx  #3
+            bne  -
+            lda  #'0'
+            sta  (_p),y
+            iny
+            sta  (_p),y
+            rts
+        }}
     }
 
     sub put_hundreds(uword addr, ubyte bcd_mid, ubyte bcd_lo) -> ubyte {

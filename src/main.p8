@@ -9,27 +9,30 @@
 %import score
 %import hostiles
 %import title
+%import prof
 %zeropage basicsafe
 %memtop $C000
 
 main {
     ; Self-test switches: keep false / 0 in builds for the designer.
     const bool DEBUG_HUD = false        ; test readouts in place of the HUD row
+    const bool PROFILE = false          ; frame-time breakdown on char rows 21-24 (prof.p8)
     ; scripted test (needs input.SCRIPTED): 1 move, 2 boost, 3 clamp, 4 spin (no stars),
     ; 5 three hits, 6 boosted hit, 7 chain reaction, 8 caught in an explosion, 9 chain with multiplier log,
     ; 10 one explosion catching 5 stars (staggered),
-    ; 11 hostile spawns in galaxy 1, 12 hostile spawns in galaxy 11 (then a few boosts), 13 contact death,
+    ; 11 hostile spawns in galaxy 1, 12 hostile spawns in galaxy 21, the hardest (then a few boosts), 13 contact death,
     ; 14 hurl in the open, 15 hurl into another hostile, 16 hurl explosion next to a star,
     ; 17 supernova kills 2 hostiles, 18 hurl into a stationary star.
     ; Game flow (phase 5): 19 full loop (title, galaxy 1 cleared, galaxy 2 lost, game over, title),
     ; 20 clear bonus and extra life, 21 extra life thresholds (no play, needs DEBUG_HUD), 22 pause,
     ; 23 death and respawn (DEBUG_HUD), 24 boost hurl while safe (DEBUG_HUD), 25 explosion while safe (DEBUG_HUD),
-    ; 26 respawn push and hold, galaxy 11 hostile speed (DEBUG_HUD),
+    ; 26 respawn push and hold, top hostile speed (DEBUG_HUD),
     ; 27 hurl of a hostile that touches a star, 28 hurl off the playfield edge (readouts as tests 13-18),
     ; 29 boost into a star from a one-tile gap between two stars, 30 the same vertically,
-    ; 31 lone explosions in column 0 and row 0: their tiles are restored afterwards (readouts as tests 5-8)
+    ; 31 lone explosions in column 0 and row 0: their tiles are restored afterwards (readouts as tests 5-8),
+    ; 32 map of an explosion's round core (explode.hits), no play
     const ubyte TEST = 0
-    const bool OLD_TEST = TEST != 0 and (TEST < 19 or TEST >= 27)  ; tests 1-18, 27-28: one galaxy, never ends
+    const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31))  ; tests 1-18, 27-31: one galaxy, never ends
     const bool NO_DEATH = TEST == 11 or TEST == 12  ; spawn and frame time tests: the player can't be hurt
 
     ; [TUNE] game flow
@@ -47,11 +50,14 @@ main {
 
     sub start() {
         video.init()
+        score.init()
         video.start_frame_irq()
         if OLD_TEST
             old_test()
         if TEST == 21
             extra_life_test()
+        if TEST == 32
+            core_map_test()
 
         repeat {
             if TEST == 0 or TEST == 19
@@ -74,7 +80,7 @@ main {
         video.draw_hud()
         score.new_game()
         if TEST == 20 {
-            score.points_mid = $01      ; 19,900: the supernova reaches 20,000
+            score.points_mid = $04      ; 49,900: the supernova reaches 50,000
             score.points_lo = $99
         }
     }
@@ -113,27 +119,54 @@ main {
         ; When the last star is destroyed the timer and multiplier stop; play goes on until the explosions and
         ; hurls are over (the player can still be hurt) and a death effect has ended.
         test_stage(STAGE_PLAY)
+        if PROFILE
+            prof.init()
         repeat {
             video.wait_frame()
+            if PROFILE
+                prof.start()
             input.read()
             if input.pressed & input.STOP != 0
                 pause()
             if stars.left != 0 or OLD_TEST
                 score.update()          ; first: a multiplier raised this frame keeps its full time
+            if PROFILE
+                prof.mark(0)
             player.update()
+            if PROFILE
+                prof.mark(1)
             hostiles.update()
+            if PROFILE
+                prof.mark(2)
             if player.dying == 0
                 stars.player_contact()
+            if PROFILE
+                prof.mark(3)
             hostiles.check_player()
+            if PROFILE
+                prof.mark(4)
             explode.check_player()
+            if PROFILE
+                prof.mark(5)
             hostiles.check_explosions()
+            if PROFILE
+                prof.mark(6)
             stars.update()
+            if PROFILE
+                prof.mark(7)
             explode.update()
+            if PROFILE
+                prof.mark(8)
             ; the hostile chain lives while an explosion, a countdown it started, or a hurl is going on
             if explode.live == 0 and hostiles.flying == 0 and stars.blast_countdowns == 0
                 score.chain = 0
             player.draw()
             hostiles.draw()
+            score.flush()
+            if PROFILE {
+                prof.mark(9)
+                prof.end_frame()
+            }
             if TEST != 0
                 test_frame()
             if player.gone
@@ -179,7 +212,7 @@ main {
         video.draw_hud()
         score.new_game()
         if TEST == 12
-            score.galaxy = 11
+            score.galaxy = 21
         explode.clear()
         if TEST == 11 or TEST == 12
             stars.place(stars.for_galaxy(score.galaxy))
@@ -190,7 +223,7 @@ main {
         hostiles.start_galaxy(score.galaxy)
         player.init()
         player.draw()
-        if TEST == 5
+        if TEST == 5 or TEST == 8
             player.y = 82                   ; lined up with the star's box (y 82-93): straight bounces back
         if TEST == 29 {
             player.x = 209                  ; box x 209-221 in the gap: star boxes end at 205 and start at 226
@@ -239,6 +272,8 @@ main {
     ubyte[] script_hit_back = [50, 0, 1, 8 | 16, 9, 8, 10, 0, 60, 4, 0, 0]
     ; boosted hit, then stay next to the star (caught when it explodes)
     ubyte[] script_caught = [50, 0, 1, 8 | 16, 10, 8, 0, 0]
+    ; test 8: boosted hit, then keep pushing into the star until it explodes (well inside its core)
+    ubyte[] script_caught_close = [50, 0, 1, 8 | 16, 200, 8, 0, 0]
     ubyte[] script_still = [0, 0]
     ; stand still while 6 hostiles gather, then boost right, left and up into them
     ubyte[] script_gather = [250, 0, 250, 0, 100, 0, 1, 8 | 16, 40, 8, 60, 0, 1, 4 | 16, 60, 4, 60, 0,
@@ -287,8 +322,8 @@ main {
             }
             17 -> {
                 stars.add(12, 5, 0)         ; hit by the player
-                stars.add(12, 4, 1)         ; hostiles that stand still in its explosion area
-                stars.add(13, 6, 2)
+                stars.add(12, 4, 1)         ; hostiles that stand still in its explosion's core (above it and
+                stars.add(13, 5, 2)         ; right of it; a diagonal neighbour is outside the round core)
             }
             29 -> {
                 stars.add(12, 5, 0)         ; the player starts in the empty tile (13,5) between them
@@ -340,7 +375,7 @@ main {
             4 -> input.script = &script_spin
             5 -> input.script = &script_hits
             6, 7, 9, 10 -> input.script = &script_boost_hit
-            8 -> input.script = &script_caught
+            8 -> input.script = &script_caught_close
             11, 13 -> input.script = &script_still
             12 -> input.script = &script_gather
             14, 15, 16, 18, 27 -> input.script = &script_hurl
@@ -416,7 +451,7 @@ main {
                     26 -> {
                         set_script(&script_still)
                         test_hostiles()
-                        hostiles.set_speed(hostiles.galaxy_speed[10])  ; 1.8 px/f: back at the centre in 2 s without the hold
+                        hostiles.set_speed(hostiles.galaxy_speed[len(hostiles.galaxy_speed) - 1])  ; 1.8 px/f: back at the centre in 2 s without the hold
                     }
                     25 -> {
                         set_script(&script_caught)
@@ -527,9 +562,35 @@ main {
         hex_digit(38, player.deaths)
     }
 
+    ubyte[17] core_row
+
+    sub core_map_test() {
+        ; Test 32: explode.hits() for centre offsets -32..32 px in steps of 4 around an explosion centred on
+        ; (160, 96): '*' hit, '.' miss, from char row 2, column 4 (17 x 17). The 3x3 tiles reach +-24 px.
+        video.clear_screen()
+        explode.core_x[0] = 160
+        explode.core_y[0] = 96
+        ubyte gy
+        ubyte gx
+        for gy in 0 to 16 {
+            explode.obj_y = 96 - 32 + gy * 4
+            for gx in 0 to 16 {
+                explode.obj_x = 160 - 32 + (gx as uword) * 4
+                core_row[gx] = '.' as ubyte
+                if explode.hits(0)
+                    core_row[gx] = '*' as ubyte
+            }
+            uword a = video.row_addr(2 + gy) + 4
+            for gx in 0 to 16
+                @(a + gx * 2) = core_row[gx]
+        }
+        repeat {
+        }
+    }
+
     sub extra_life_test() {
         ; Test 21: extra life thresholds without play. Readouts: lives, next threshold (BCD hundreds) after
-        ; each step; then the score and the no-more-lives flag.
+        ; each step; then the score and the no-more-lives flag; then 8 chain kills (score in hundreds).
         video.draw_hud()
         score.new_game()
         sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
@@ -557,6 +618,15 @@ main {
         hex_byte(29, score.points_mid)
         hex_byte(31, score.points_lo)
         hex_digit(34, score.no_more_lives as ubyte)
+        ; chain cap: 8 kills at x1 = 500 + 1000 + 2000 + 4000 + 8000 + 16000 x 3 = 63,500 (hundreds BCD 0635)
+        score.points_hi = 0
+        score.points_mid = 0
+        score.points_lo = 0
+        score.chain = 0
+        repeat 8
+            score.chain_kill()
+        hex_byte(36, score.points_mid)
+        hex_byte(38, score.points_lo)
         repeat {
         }
     }

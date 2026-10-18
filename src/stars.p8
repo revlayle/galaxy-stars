@@ -8,7 +8,7 @@
 %import hostiles
 
 stars {
-    const ubyte MAX = 45
+    const ubyte MAX = 55                ; [TUNE] stars at most (designer, 2026-10-18: was 45)
     ; tiles kept free around the player's start (spec section 10)
     const ubyte FREE_COL = 8            ; columns 8-11
     const ubyte FREE_ROW = 4            ; rows 4-7
@@ -90,8 +90,8 @@ stars {
     }
 
     sub for_galaxy(ubyte g) -> ubyte {
-        ; min(45, 15 + 2 * (g - 1)) stars
-        if g >= 16
+        ; min(55, 15 + 2 * (g - 1)) stars: 55 from galaxy 21
+        if g >= 21
             return MAX
         return 13 + (g << 1)
     }

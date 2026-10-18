@@ -39,8 +39,9 @@ hostiles {
     const ubyte CHASE = 1
     const ubyte HURLED = 2
 
-    ; [TUNE] speed per galaxy 1-11 (then it stays at 29), 1/16 px per frame
-    ubyte[11] galaxy_speed = [12, 14, 15, 17, 19, 20, 22, 24, 26, 27, 29]
+    ; [TUNE] speed per galaxy 1-21 (then it stays at 29), 1/16 px per frame
+    ; galaxy 1 = 50% of the player's 24, galaxy 21 = 120%, linear (designer, 2026-10-18: was galaxy 11)
+    ubyte[21] galaxy_speed = [12, 13, 14, 15, 15, 16, 17, 18, 19, 20, 20, 21, 22, 23, 24, 25, 25, 26, 27, 28, 29]
     ; cos of the 16 headings x 127. Heading 0 = right, counting clockwise on screen (4 = down).
     byte[16] cos16 = [127, 117, 90, 49, 0, -49, -90, -117, -127, -117, -90, -49, 0, 49, 90, 117]
     byte[16] head_vx                    ; built at galaxy start from the speed
@@ -86,10 +87,11 @@ hostiles {
         }
         used = 0
         flying = 0
-        ; max(50, 300 - 25 * (g - 1)) frames
+        ; max(50, 300 - 12.5 * (g - 1)) frames: 6 s in galaxy 1, a quarter second less per galaxy, 1 s from
+        ; galaxy 21 on (rounded up to whole frames)
         interval = 50
-        if g < 11
-            interval = 300 - ((g - 1) as uword) * 25
+        if g < 21
+            interval = 300 - ((((g - 1) as uword) * 25) >> 1)
         spawn_timer = interval
         if g > len(galaxy_speed)
             g = len(galaxy_speed)
@@ -532,26 +534,57 @@ _done
     ; ---- kills ----
 
     sub check_explosions() {
-        ; Chasing hostiles whose box overlaps an active explosion area (whole tiles) are destroyed.
+        ; Chasing hostiles whose centre is in a running explosion's core are destroyed.
         if explode.live == 0
             return
-        ubyte s
-        ubyte i
-        for s in 0 to explode.MAX - 1 {
-            if explode.timer[s] != 0 {
-                explode.area(s)
-                uword ex0 = (explode.c0 as uword) << 4
-                uword ex1 = ((explode.c1 as uword) << 4) + 15
-                ubyte ey0 = explode.r0 << 4
-                ubyte ey1 = (explode.r1 << 4) + 15
-                for i in 0 to MAX - 1 {
-                    if state[i] == CHASE and x[i] <= ex1 and ex0 < x[i] + BOX and y[i] <= ey1 and ey0 < y[i] + BOX {
-                        free(i)
-                        destroyed()
-                    }
-                }
-            }
+        repeat {
+            ubyte i = explosion_hit()
+            if i == 255
+                break
+            free(i)
+            destroyed()
         }
+    }
+
+    asmsub explosion_hit() clobbers(X, Y) -> ubyte @A {
+        ; The first chasing hostile whose centre is in a running explosion's core (explode.hits), or 255.
+        ; Assembly: up to 6 hostiles x 8 explosions every frame.
+        %asm {{
+            ldx  #0
+_slot
+            lda  p8b_hostiles.p8v_state,x
+            cmp  #p8b_hostiles.p8c_CHASE
+            bne  _next
+            ; centre of the box: x + 6, y + 6
+            lda  p8b_hostiles.p8v_x_lsb,x
+            clc
+            adc  #p8b_hostiles.p8c_BOX / 2
+            sta  p8b_explode.p8v_obj_x
+            lda  p8b_hostiles.p8v_x_msb,x
+            adc  #0
+            sta  p8b_explode.p8v_obj_x+1
+            lda  p8b_hostiles.p8v_y,x
+            clc
+            adc  #p8b_hostiles.p8c_BOX / 2
+            sta  p8b_explode.p8v_obj_y
+            ldy  #p8b_explode.p8c_MAX - 1
+_expl
+            lda  p8b_explode.p8v_timer,y
+            beq  _nexpl
+            jsr  p8b_explode.p8s_hits
+            bcc  _nexpl
+            txa
+            rts
+_nexpl
+            dey
+            bpl  _expl
+_next
+            inx
+            cpx  #p8b_hostiles.p8c_MAX
+            bne  _slot
+            lda  #255
+            rts
+        }}
     }
 
     sub destroyed() {
