@@ -138,6 +138,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - A `WARNING` star that is hit: a hit that brings `hits` to 3 cancels the warning and starts the countdown (it goes supernova instead of hostile); a +1 hit that stays below 3 only adds to its counter and it turns hostile as planned.
 - **Bounce:** the player is pushed away from the star: knockback of 3 px/f for 6 frames, away from the star centre in the nearest of 8 directions, with no joystick control during the knockback **[TUNE]**. A boost that is running keeps its remaining time.
 - A star only counts one hit per contact: after a bounce, the same star can't count again for 10 frames **[TUNE]**.
+- **No bounce trap** (designer, 2026-10-18): touching a different star during a knockback (one that started in an earlier frame) stops the knockback there instead of bouncing again, and control returns at once. That touch still counts as a hit (+3 while boosting). Without this, a player lined up between two stars with one empty tile between them bounced back and forth with no control until a star exploded. (A compiler bug that turned diagonal bounces into sideways ones made this much more frequent; fixed, see the phase 5 notes.)
 - Touching a star already in `COUNTDOWN` bounces the player but adds nothing.
 - Counter feedback: `hits` 1 and 2 brighten the star (a different color per step); `COUNTDOWN` flashes the star, faster in the last half second. Colors are picked in the art phase; if multicolor limits make it unreadable, record the fallback in phase notes.
 
@@ -173,12 +174,14 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Player **not** boosting and not invincible: the player loses a life (§8).
 - Player **boosting**: the hostile is **hurled** away and then explodes:
   - Direction: the player's movement direction (8 directions) at the moment of contact; if the player isn't moving, straight away from the player (nearest of 8 directions, player centre → hostile centre).
-  - It flies at 6 px/f for up to 16 frames (96 px, about 6 tiles) **[TUNE]**. Even if the player keeps boosting after it (3.75 px/f), the gap grows to about 48 px, outside the explosion.
-  - It explodes early when it touches another hostile star (not one that is itself being hurled) or a stationary star in any state, or when its box reaches a playfield edge. Otherwise it explodes at the end of the flight.
+  - It flies at 6 px/f for up to 16 frames (96 px, about 6 tiles) **[TUNE]**.
+  - **The player bounces** off the hurled hostile like off a stationary star (designer, 2026-10-18): the knockback of §6, straight back, opposite the hurl direction. The boost keeps its remaining time.
+  - **Where it explodes** (designer, 2026-10-18): it flies through stationary stars, like chasing hostiles do. It flies through other hostiles for its first 8 frames (48 px) **[TUNE]**; after that it explodes early on touching a hostile (not one that is itself being hurled). Otherwise it explodes at the end of the flight. Before this, a hostile hurled over or next to a star exploded on the spot and caught the player every time.
+  - **Off the edge** (designer, 2026-10-18): when its box reaches a playfield edge it flies on off the screen (7 more frames, hidden by the border) and is gone, with no explosion. Its kill was already scored at the hurl.
   - The explosion is a normal explosion (§6): the 3 x 3 tiles around the tile under the hurled star's centre, 30 frames, with every effect of a supernova explosion. It can kill the player, destroys hostiles caught in it (chain scoring, §8) and sends stationary stars in it into their countdown, so hurls start chain reactions.
   - It is not a supernova: no 100 points, no multiplier raise, no quasar chance.
   - While flying it is harmless to the player, spins fast, and can't be hit again. Explosions it flies through don't affect it.
-  - Every hostile the boosting player touches is hurled, each in its own flight.
+  - Every hostile the boosting player touches is hurled, each in its own flight. Because of the bounce, a boost into a pack usually hurls only the first one it touches (more if several are touched in the same frame, or after the knockback while the boost still runs).
 - A hurled hostile scores the next chain step (§8) when it is hit, and counts as destroyed at that moment (`stars_left` goes down then), so the galaxy can be cleared while one is still flying.
 - Player invincible: any hostile touched is destroyed at once and counts in the hostile chain.
 
@@ -221,7 +224,8 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - The player sprite flashes/shrinks for 1 s while everything else keeps running (explosions, countdowns, hostiles), then reappears in the centre.
   - The galaxy timer keeps running.
   - The player is safe for 2 s after reappearing (sprite blinks): hostiles pass through them harmlessly and explosions don't hurt. Hitting stars works normally.
-  - Hostile stars remain where they are.
+  - **Respawn push** (designer, 2026-10-17): when the player reappears, every hostile (not one being hurled) inside the box around the centre, 80 px left and right and 64 px up and down (10 x 8 tiles), is pushed straight out from the centre (nearest of 16 directions) at 6 px/f until it is outside the box; the playfield edges stop it **[TUNE]**. Pushed hostiles are not hurt and score nothing.
+  - **Hold** (designer, 2026-10-17): during the 2 s of safety hostiles hold still (spinning in place), including ones that appear then, and chase again when it ends. Without this, a galaxy 11 hostile (1.8 px/f) gets back to the centre within the 2 s. A hostile counts as inside the push box by its centre; held hostiles keep turning towards the player, so they set off straight at them when the safety ends.
 - The life is taken at the hit (the HUD shows the new count at once). During the death effect the player has no control and touches nothing; boost and cooldown are cleared. A boost during the 2 s of safety still hurls hostiles (designer, 2026-10-17).
 - No lives left → game over (§11) when the last death effect ends.
 - One score event can pass several extra-life thresholds: a life for each, up to 9. At the maximum score the thresholds stop.
@@ -320,6 +324,9 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - Designer answers 2026-10-17: boost glows through bright colors (§5); a warning star hit to 3 goes supernova instead of hostile (§6); hit-count and countdown feedback if doable (§6); hostiles spawn 4+ tiles from the player and stay at 120% after galaxy 11, pass over stars and each other (§7); boost hurls, supernova kills and invincibility kills share one chain, capped at the 8th step (§8); supernova points use the multiplier before the +1; clear bonus multiplied then reset; extra life every 20,000 to start with (§8); quasar appears after its explosion, invincibility glow slows in its last second (§9).
 - Art budget (designer, 2026-10-17): 8 star kinds and 3 explosion frames, so all chars fit without reuse (§12).
 - Boost vs hostile (designer change, 2026-10-17): instead of flying off the screen, a boosted hostile is hurled about 6 tiles away and explodes like a supernova (can hurt the player, starts chain reactions). It explodes early on touching another star or a playfield edge. The hit scores the chain step; the explosion adds no supernova points or multiplier (§7).
+- Respawn (designer, 2026-10-17): hostiles near the centre are pushed out when the player reappears, so they can't camp the respawn point (§8).
+- Bounce trap (designer, 2026-10-18): a star touched during a knockback stops it instead of bouncing again, so the player can't be trapped between two stars (§6).
+- Hurl blasts (designer, 2026-10-18): the player bounces off a hurled hostile; the hostile flies through stationary stars, and through hostiles for its first 8 frames; at a playfield edge it flies off the screen with no explosion. So its explosion no longer catches the player who hurled it (§7).
 
 ## 16. Backlog
 

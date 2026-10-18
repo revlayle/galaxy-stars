@@ -7,6 +7,7 @@
 %import input
 %import video
 %import score
+%import hostiles
 
 player {
     const ubyte BOX = 13                ; collision box size [TUNE]
@@ -63,6 +64,7 @@ player {
     ubyte color
     ubyte boosts                        ; boosts started (debug readout)
     ubyte knock_left                    ; knockback frames left
+    ubyte knock_star                    ; the star that started the knockback (255: a hurled hostile)
     byte knock_vx
     byte knock_vy
     ubyte bounces                       ; bounces started (debug readout)
@@ -128,6 +130,7 @@ player {
                     init()
                     safe = SAFE_FRAMES
                     respawns++
+                    hostiles.push_out()
                 }
             }
             return
@@ -178,9 +181,12 @@ player {
     sub bounce(byte dx, byte dy) {
         ; Knockback away from a star: dx, dy point from the star to the player. Nearest of 8 directions:
         ; an axis counts when it is at least half the other (tan 26.6 deg, close to the 22.5 deg boundary).
-        ubyte ax = dx as ubyte
-        if dx < 0
-            ax = (-dx) as ubyte
+        ; prog8c 12.3.4 bug: "ax = dx / if dx < 0" at the start of a sub tested the flags of the caller's last
+        ; load (dy), not dx, so the bounce went sideways when dx and dy had opposite signs. Written so the test
+        ; needs a fresh load.
+        ubyte ax = (-dx) as ubyte
+        if dx >= 0
+            ax = dx as ubyte
         ubyte ay = dy as ubyte
         if dy < 0
             ay = (-dy) as ubyte
@@ -204,6 +210,7 @@ player {
         if not use_x and not use_y
             knock_vy = -KNOCK_SPEED     ; dead centre (can't happen with boxes this size): straight up
         knock_left = KNOCK_FRAMES
+        knock_star = 255                ; stars.touch() sets it after the bounce
         bounces++
     }
 

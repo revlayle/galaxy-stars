@@ -23,9 +23,13 @@ main {
     ; 17 supernova kills 2 hostiles, 18 hurl into a stationary star.
     ; Game flow (phase 5): 19 full loop (title, galaxy 1 cleared, galaxy 2 lost, game over, title),
     ; 20 clear bonus and extra life, 21 extra life thresholds (no play, needs DEBUG_HUD), 22 pause,
-    ; 23 death and respawn (DEBUG_HUD), 24 boost hurl while safe (DEBUG_HUD), 25 explosion while safe (DEBUG_HUD)
+    ; 23 death and respawn (DEBUG_HUD), 24 boost hurl while safe (DEBUG_HUD), 25 explosion while safe (DEBUG_HUD),
+    ; 26 respawn push and hold, galaxy 11 hostile speed (DEBUG_HUD),
+    ; 27 hurl of a hostile that touches a star, 28 hurl off the playfield edge (readouts as tests 13-18),
+    ; 29 boost into a star from a one-tile gap between two stars, 30 the same vertically,
+    ; 31 lone explosions in column 0 and row 0: their tiles are restored afterwards (readouts as tests 5-8)
     const ubyte TEST = 0
-    const bool OLD_TEST = TEST != 0 and TEST < 19   ; tests 1-18 run one galaxy that never ends
+    const bool OLD_TEST = TEST != 0 and (TEST < 19 or TEST >= 27)  ; tests 1-18, 27-28: one galaxy, never ends
     const bool NO_DEATH = TEST == 11 or TEST == 12  ; spawn and frame time tests: the player can't be hurt
 
     ; [TUNE] game flow
@@ -186,9 +190,24 @@ main {
         hostiles.start_galaxy(score.galaxy)
         player.init()
         player.draw()
-        if TEST <= 10
+        if TEST == 5
+            player.y = 82                   ; lined up with the star's box (y 82-93): straight bounces back
+        if TEST == 29 {
+            player.x = 209                  ; box x 209-221 in the gap: star boxes end at 205 and start at 226
+            player.y = 82                   ; lined up with the stars' boxes (y 82-93)
+        }
+        if TEST == 30 {
+            player.x = 161                  ; lined up with the stars' boxes (x 162-173)
+            player.y = 81                   ; box y 81-93 in the gap: star boxes end at 77 and start at 98
+        }
+        if TEST == 31 {
+            stars.start_countdown(0)
+            stars.start_countdown(1)
+            stars.timer[1] = 150            ; a separate explosion, after the first one has ended
+        }
+        if TEST <= 10 or TEST >= 29
             hostiles.spawn_timer = $FFFF    ; tests from before the hostiles: none spawn
-        if TEST >= 13
+        if TEST >= 13 and TEST < 29
             test_hostiles()
         if input.SCRIPTED
             select_script()
@@ -216,6 +235,8 @@ main {
     ubyte[] script_hits = [50, 0, 150, 8, 60, 4, 0, 0]
     ; one boosted hit on star 0, then back off left
     ubyte[] script_boost_hit = [50, 0, 1, 8 | 16, 30, 8, 60, 4, 0, 0]
+    ; test 17: boosted hit on star 0, let go during the bounce, then back off left (away from the hostiles)
+    ubyte[] script_hit_back = [50, 0, 1, 8 | 16, 9, 8, 10, 0, 60, 4, 0, 0]
     ; boosted hit, then stay next to the star (caught when it explodes)
     ubyte[] script_caught = [50, 0, 1, 8 | 16, 10, 8, 0, 0]
     ubyte[] script_still = [0, 0]
@@ -224,6 +245,12 @@ main {
                              1, 1 | 16, 40, 1, 0, 0]
     ; wait for the hostile from tile (15,5) to come close, then boost right into it for 8 frames
     ubyte[] script_hurl = [120, 0, 1, 8 | 16, 7, 8, 0, 0]
+    ; test 28: move right 60 px, wait for the hostile from tile (19,5), then boost right into it
+    ubyte[] script_edge = [50, 0, 40, 8, 50, 0, 1, 8 | 16, 7, 8, 0, 0]
+    ; test 29: boost right into star 1, keep pushing right, then up out of the gap
+    ubyte[] script_gap = [50, 0, 1, 8 | 16, 9, 8, 30, 1, 0, 0]
+    ; test 30: boost up into star 1, keep pushing up, then left out of the gap
+    ubyte[] script_gap_v = [50, 0, 1, 1 | 16, 9, 1, 30, 4, 0, 0]
 
     sub test_layout() {
         stars.clear()
@@ -245,7 +272,7 @@ main {
                 stars.add(13, 5, 4)
                 stars.add(13, 6, 5)
             }
-            13, 14, 23, 24 -> stars.add(15, 5, 0)
+            13, 14, 23, 24, 26 -> stars.add(15, 5, 0)
             25 -> {
                 stars.add(12, 5, 0)         ; hit by the player, who is caught in its explosion
                 stars.add(10, 7, 1)         ; its explosion covers the centre while the player is safe
@@ -262,6 +289,23 @@ main {
                 stars.add(12, 5, 0)         ; hit by the player
                 stars.add(12, 4, 1)         ; hostiles that stand still in its explosion area
                 stars.add(13, 6, 2)
+            }
+            29 -> {
+                stars.add(12, 5, 0)         ; the player starts in the empty tile (13,5) between them
+                stars.add(14, 5, 1)
+            }
+            31 -> {
+                stars.add(0, 5, 0)          ; explodes in column 0
+                stars.add(5, 0, 1)          ; explodes in row 0
+            }
+            30 -> {
+                stars.add(10, 6, 0)         ; the player starts in the empty tile (10,5) between them
+                stars.add(10, 4, 1)
+            }
+            28 -> stars.add(19, 5, 0)       ; turns hostile; hurled right near the edge
+            27 -> {
+                stars.add(15, 5, 0)         ; turns hostile
+                stars.add(12, 5, 1)         ; the hostile is over it when it is hurled
             }
             18 -> {
                 stars.add(15, 5, 0)
@@ -299,8 +343,11 @@ main {
             8 -> input.script = &script_caught
             11, 13 -> input.script = &script_still
             12 -> input.script = &script_gather
-            14, 15, 16, 18 -> input.script = &script_hurl
-            17 -> input.script = &script_boost_hit
+            14, 15, 16, 18, 27 -> input.script = &script_hurl
+            28 -> input.script = &script_edge
+            29 -> input.script = &script_gap
+            30 -> input.script = &script_gap_v
+            17 -> input.script = &script_hit_back
         }
     }
 
@@ -308,9 +355,10 @@ main {
     ubyte[] script_title = [60, 0, 1, 16, 0, 0]
     ; still until a hostile moves, Run/Stop (32), 100 frames paused, Run/Stop
     ubyte[] script_pause = [250, 0, 170, 0, 1, 32, 99, 0, 1, 32, 0, 0]
-    ; test 24: after the first respawn, wait, then boost on the spot (still safe when the hostile comes)
-    const ubyte SAFE_BOOST_WAIT = 1
-    ubyte[] script_safe_boost = [SAFE_BOOST_WAIT, 0, 1, 16, 0, 0]
+    ; test 24: after the first respawn, boost towards where the hostile is pushed (direction filled in then)
+    ubyte[] script_safe_boost = [1, 16, 40, 0, 0, 0]
+    ; push heading in 8ths (0 right, clockwise) -> joystick bits
+    ubyte[8] octant_joy = [8, 8 | 2, 2, 4 | 2, 4, 4 | 1, 1, 8 | 1]
     const ubyte SAFE_BLAST = 220        ; test 25: frame star 1 explodes, while the player is safe
 
     ubyte title_visits
@@ -321,6 +369,15 @@ main {
     uword[3] fl_death                   ; frames of the first 3 deaths
     uword[2] fl_respawn                 ; frames of the first 2 respawns
     uword fl_star1_gone
+    ; test 26: hostile slot 0 after the first respawn
+    uword fl_push_end                   ; frame its push ended
+    uword fl_push_x                     ; box position then
+    ubyte fl_push_y
+    bool fl_push_inside                 ; still in the respawn box then (should be false)
+    ubyte fl_hold_moves                 ; frames it moved during the safety after the push
+    ubyte fl_chase_moves                ; frames it moved after the safety (until the next death)
+    uword fl_last_x
+    ubyte fl_last_y
 
     sub set_script(uword s) {
         input.script = s
@@ -356,6 +413,11 @@ main {
                         set_script(&script_still)
                         test_hostiles()
                     }
+                    26 -> {
+                        set_script(&script_still)
+                        test_hostiles()
+                        hostiles.set_speed(hostiles.galaxy_speed[10])  ; 1.8 px/f: back at the centre in 2 s without the hold
+                    }
                     25 -> {
                         set_script(&script_caught)
                         hostiles.spawn_timer = $FFFF
@@ -373,8 +435,8 @@ main {
         if OLD_TEST {
             if DEBUG_HUD {
                 ; the next frame IRQ came during this frame's work (not counted after a readout redraw,
-                ; which can start the frame late)
-                if video.frame_ready and not dbg_drew
+                ; which can start the frame late, nor on the first frame, which starts late after the setup)
+                if video.frame_ready and not dbg_drew and dbg_frames != 0
                     dbg_missed++
                 dbg_prev_drew = dbg_drew
                 dbg_drew = false
@@ -394,11 +456,36 @@ main {
             fl_prev_respawns = player.respawns
         }
         if TEST == 24 and player.respawns == 1 and not fl_boost_set {
+            ubyte joy = octant_joy[((hostiles.push_dir[0] + 1) & 15) >> 1]
+            script_safe_boost[1] = joy | input.FIRE
+            script_safe_boost[3] = joy
             set_script(&script_safe_boost)
             fl_boost_set = true
         }
         if TEST == 25 and fl_star1_gone == 0 and stars.state[1] == stars.GONE
             fl_star1_gone = fl_frames
+        if TEST == 26 and hostiles.state[0] == hostiles.CHASE {
+            uword hx = hostiles.x[0]
+            ubyte hy = hostiles.y[0]
+            if player.respawns == 1 and player.deaths == 1 {
+                bool moved = hx != fl_last_x or hy != fl_last_y
+                if fl_push_end == 0 {
+                    if not hostiles.pushing[0] {
+                        fl_push_end = fl_frames
+                        fl_push_x = hx
+                        fl_push_y = hy
+                        fl_push_inside = hostiles.in_push_box(0)
+                    }
+                } else if moved {
+                    if player.safe != 0
+                        fl_hold_moves++
+                    else
+                        fl_chase_moves++
+                }
+            }
+            fl_last_x = hx
+            fl_last_y = hy
+        }
         if DEBUG_HUD and fl_frames & 7 == 0
             flow_readouts()
     }
@@ -407,6 +494,22 @@ main {
         ; frames | lives | dying | safe | death 1 | respawn 1 | death 2 | respawn 2 |
         ; test 25: frame star 1 exploded, else kills and hostiles in use | deaths
         sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
+        if TEST == 26 {
+            ; frames | death 1 | respawn 1 | push end | box x, y then | inside | moves while held | moves after |
+            ; pushes | deaths
+            hex_word(0, fl_frames)
+            hex_word(5, fl_death[0])
+            hex_word(10, fl_respawn[0])
+            hex_word(15, fl_push_end)
+            hex_word(20, fl_push_x)
+            hex_byte(25, fl_push_y)
+            hex_digit(28, fl_push_inside as ubyte)
+            hex_byte(30, fl_hold_moves)
+            hex_byte(33, fl_chase_moves)
+            hex_digit(36, hostiles.pushes)
+            hex_digit(38, player.deaths)
+            return
+        }
         hex_word(0, fl_frames)
         hex_digit(5, score.lives)
         hex_byte(7, player.dying)
@@ -516,7 +619,7 @@ main {
             dbg_history[5] = player.anim_frame
         }
 
-        if TEST >= 11 {
+        if TEST >= 11 and TEST < 29 {
             hostile_readouts()
             return
         }

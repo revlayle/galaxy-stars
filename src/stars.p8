@@ -57,6 +57,7 @@ stars {
     ubyte @shared n_any
     ubyte[MAX] reveal_order             ; galaxy start: stars in the order they appear
     ubyte revealed
+    ubyte stops                         ; knockbacks stopped by a second star (debug readout)
 
     sub seed() {
         cx16.r0 = mkword(c64.RASTER, c64.CIA1TAH)
@@ -207,6 +208,22 @@ stars {
 
     sub touch(ubyte i, byte dx, byte dy) {
         ; dx, dy: player box minus star box (both corners); equal sizes but one, so close to centre minus centre.
+        ; A different star touched during a knockback that started in an earlier frame stops the knockback there:
+        ; no second bounce, so the player can't be trapped bouncing between two stars. The touch still counts.
+        if player.knock_left != 0 and player.knock_left < player.KNOCK_FRAMES and i != player.knock_star {
+            player.knock_left = 0
+            stops++
+            if no_hit[i] == 0 {
+                no_hit[i] = NO_HIT_FRAMES
+                if state[i] != COUNTDOWN {
+                    if player.boosted
+                        hit(i, BOOST_HITS)
+                    else
+                        hit(i, 1)
+                }
+            }
+            return
+        }
         if no_hit[i] != 0
             return
         no_hit[i] = NO_HIT_FRAMES
@@ -217,6 +234,7 @@ stars {
                 hit(i, 1)
         }
         player.bounce(dx, dy)
+        player.knock_star = i
     }
 
     sub hit(ubyte i, ubyte n) {

@@ -26,6 +26,13 @@ hostiles {
     const byte HURL_SPEED = 96
     const byte HURL_DIAG = 68
     const ubyte HURL_FRAMES = 16
+    const ubyte HURL_FREE_FRAMES = 8    ; [TUNE] flies through hostiles for the first 8 frames (48 px)
+    const ubyte OFF_FRAMES = 7          ; at a playfield edge it flies on this long, out of sight, then is gone
+    ; [TUNE] respawn push (spec section 8): hostiles whose centre is inside the box around the playfield centre
+    ; (px 160, py 96), 80 px left and right and 64 px up and down, fly straight out at 6 px/f until outside it
+    const byte PUSH_SPEED = 96
+    const ubyte PUSH_HALF_W = 80
+    const ubyte PUSH_HALF_H = 64
 
     ; slot states
     const ubyte FREE = 0
@@ -38,6 +45,8 @@ hostiles {
     byte[16] cos16 = [127, 117, 90, 49, 0, -49, -90, -117, -127, -117, -90, -49, 0, 49, 90, 117]
     byte[16] head_vx                    ; built at galaxy start from the speed
     byte[16] head_vy
+    byte[16] push_vx                    ; the 16 headings at PUSH_SPEED
+    byte[16] push_vy
 
     uword[MAX] x
     ubyte[MAX] y
@@ -45,7 +54,10 @@ hostiles {
     ubyte[MAX] y_frac
     ubyte[MAX] state
     ubyte[MAX] heading                  ; 0-15
+    bool[MAX] pushing                   ; CHASE: being pushed out of the respawn box
+    ubyte[MAX] push_dir                 ; heading of the push
     ubyte[MAX] flight                   ; HURLED: frames of flight left
+    ubyte[MAX] off_edge                 ; HURLED: frames left flying off the playfield (no explosion)
     byte[MAX] hurl_vx
     byte[MAX] hurl_vy
     ubyte[MAX] anim_frame
@@ -62,6 +74,7 @@ hostiles {
     ubyte spawned                       ; warnings started
     ubyte kills                         ; hostiles destroyed (hurls and explosions)
     ubyte blasts                        ; hurl explosions
+    ubyte pushes                        ; respawn pushes started
     uword hurl_x                        ; box x at the last hurl
     uword blast_x                       ; box x where the last hurled hostile exploded
 
@@ -81,6 +94,11 @@ hostiles {
         if g > len(galaxy_speed)
             g = len(galaxy_speed)
         set_speed(galaxy_speed[g - 1])
+        ubyte d
+        for d in 0 to 15 {
+            push_vx[d] = scale(PUSH_SPEED as ubyte, cos16[d])
+            push_vy[d] = scale(PUSH_SPEED as ubyte, cos16[(d - 4) & 15])
+        }
     }
 
     sub set_speed(ubyte speed) {
@@ -110,10 +128,19 @@ hostiles {
         spawn()
         turn_clock++
         ubyte i
-        for i in 0 to MAX - 1 {
-            when state[i] {
-                CHASE -> chase(i)
-                HURLED -> fly(i)
+        if player.safe == 0 {
+            for i in 0 to MAX - 1 {
+                when state[i] {
+                    CHASE -> chase(i)
+                    HURLED -> fly(i)
+                }
+            }
+        } else {
+            for i in 0 to MAX - 1 {
+                when state[i] {
+                    CHASE -> chase_safe(i)
+                    HURLED -> fly(i)
+                }
             }
         }
     }
@@ -144,6 +171,7 @@ hostiles {
                 x_frac[i] = 0
                 y_frac[i] = 0
                 heading[i] = aim(i)
+                pushing[i] = false
                 anim_frame[i] = 0
                 anim_timer[i] = 0
                 spin_ccw[i] = false
@@ -165,6 +193,43 @@ hostiles {
         else if vx > 0
             spin_ccw[i] = false
         spin(i, SPIN_DELAY)
+    }
+
+    sub chase_safe(ubyte i) {
+        ; Instead of chase() while the player is safe after reappearing: a hostile being pushed out of the
+        ; respawn box flies on (the push ends well within the safe time), the others hold still, still turning
+        ; towards the player. A separate routine, so normal frames pay nothing for it.
+        if pushing[i] {
+            byte vx = push_vx[push_dir[i]]
+            if move(i, vx, push_vy[push_dir[i]]) or not in_push_box(i)
+                pushing[i] = false
+            if vx < 0
+                spin_ccw[i] = true
+            else if vx > 0
+                spin_ccw[i] = false
+        } else if (turn_clock + i) & (TURN_FRAMES - 1) == 0
+            turn(i)
+        spin(i, SPIN_DELAY)
+    }
+
+    sub push_out() {
+        ; The player has just reappeared in the centre: chasing hostiles in the box start their push, straight
+        ; away from the player (who is at the centre).
+        ubyte i
+        for i in 0 to MAX - 1 {
+            if state[i] == CHASE and in_push_box(i) {
+                pushing[i] = true
+                push_dir[i] = (aim(i) + 8) & 15
+                pushes++
+            }
+        }
+    }
+
+    sub in_push_box(ubyte i) -> bool {
+        ; The hostile's centre (box + 6) strictly inside the respawn box.
+        uword cx = x[i] + 6
+        ubyte cy = y[i] + 6
+        return cx > 160 - PUSH_HALF_W and cx < 160 + PUSH_HALF_W and cy > 96 - PUSH_HALF_H and cy < 96 + PUSH_HALF_H
     }
 
     sub turn(ubyte i) {
@@ -396,20 +461,41 @@ _done
             hurl_vx[i] = HURL_SPEED     ; dead centre: to the right
         state[i] = HURLED
         flight[i] = HURL_FRAMES
+        off_edge[i] = 0
         flying++
         hurl_x = x[i]
+        ; the player bounces straight back, opposite the hurl, as off a stationary star
+        player.bounce(-hurl_vx[i], -hurl_vy[i])
         destroyed()
     }
 
     sub fly(ubyte i) {
-        ; A hurled hostile is harmless and can't be hit. It explodes at the end of the flight, at a playfield
-        ; edge, or on touching a chasing hostile or a stationary star in any state.
+        ; A hurled hostile is harmless and can't be hit. It flies through stationary stars, and through hostiles
+        ; for the first HURL_FREE_FRAMES; after that it explodes on touching a chasing hostile. Otherwise it
+        ; explodes at the end of the flight. At a playfield edge it flies on off the screen and is gone with no
+        ; explosion (its kill was scored at the hurl).
         ; Frame time: when an explosion already started this frame, it waits in place for the next frame.
+        if off_edge[i] != 0 {
+            ; whole pixels, no clamp: the coordinates wrap a little past the edges, where the border hides it
+            x[i] += ((hurl_vx[i] >> 4) as word) as uword
+            y[i] += (hurl_vy[i] >> 4) as ubyte
+            spin(i, 1)
+            off_edge[i]--
+            if off_edge[i] == 0 {
+                free(i)
+                flying--
+            }
+            return
+        }
         if flight[i] != 0 {
             bool edge = move(i, hurl_vx[i], hurl_vy[i])
             spin(i, 1)
             flight[i]--
-            if edge or touches_hostile(i) or touches_star(i)
+            if edge {
+                off_edge[i] = OFF_FRAMES
+                return
+            }
+            if flight[i] <= HURL_FRAMES - HURL_FREE_FRAMES and touches_hostile(i)
                 flight[i] = 0
         }
         if flight[i] == 0 and explode.starts == 0
@@ -430,31 +516,6 @@ _done
                         return true
                 }
             }
-        }
-        return false
-    }
-
-    sub touches_star(ubyte i) -> bool {
-        ; Box against the 12x12 star boxes (tile pixels 2-13). They overlap when hx - 16 * col is in -9..13,
-        ; that is (hx + 9) - 16 * col in 0..22: the column (hx + 9) >> 4, and the one left of it when
-        ; (hx + 9) & 15 <= 6. The same for rows. At most 4 tiles, no further box test.
-        uword ax = x[i] + 9
-        ubyte c1 = lsb(ax >> 4)
-        bool two_cols = lsb(ax) & 15 <= 6
-        ubyte ay = y[i] + 9
-        ubyte r1 = ay >> 4
-        ubyte idx = video.row_start[r1]
-        idx += c1
-        if video.tiles[idx] != 0
-            return true
-        if two_cols and video.tiles[idx - 1] != 0
-            return true
-        if ay & 15 <= 6 {
-            idx -= video.MAP_W
-            if video.tiles[idx] != 0
-                return true
-            if two_cols and video.tiles[idx - 1] != 0
-                return true
         }
         return false
     }

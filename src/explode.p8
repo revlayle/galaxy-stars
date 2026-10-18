@@ -49,9 +49,11 @@ explode {
 
     sub area_at(ubyte c, ubyte r) {
         ; The 3x3 tiles around tile (c, r), clipped to the playfield, in c0-c1, r0-r1.
-        c0 = c
-        if c0 != 0
-            c0--
+        ; prog8c 12.3.4 bug: "c0 = c / if c0 != 0" at the start of a sub tested the flags of the caller's last
+        ; load (the row), not c. Written so the test needs a fresh load.
+        c0 = c - 1
+        if c == 0
+            c0 = 0
         c1 = c + 1
         if c1 == video.MAP_W
             c1--
