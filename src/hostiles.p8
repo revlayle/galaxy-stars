@@ -410,15 +410,18 @@ _done
     ; ---- hurl (spec section 7) ----
 
     sub check_player() {
-        ; Player box against each chasing hostile: a hurl while boosting (also while safe), else a lost life
-        ; unless the player is safe. Nothing while the player is dying.
+        ; Player box against each chasing hostile: destroyed by the invincible player, hurled while boosting
+        ; (also while safe), else a lost life unless the player is safe. Nothing while the player is dying.
         if player.dying != 0
             return
         ubyte i
         for i in 0 to MAX - 1 {
             if state[i] == CHASE and player.x < x[i] + BOX and x[i] < player.x + player.BOX
                     and player.y < y[i] + BOX and y[i] < player.y + player.BOX {
-                if player.boosted
+                if player.invincible != 0 {
+                    free(i)
+                    destroyed()
+                } else if player.boosted
                     hurl(i)
                 else if player.hurtable()
                     player.hurt()

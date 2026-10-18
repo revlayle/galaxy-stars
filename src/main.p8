@@ -10,6 +10,7 @@
 %import hostiles
 %import title
 %import prof
+%import quasar
 %zeropage basicsafe
 %memtop $C000
 
@@ -31,8 +32,10 @@ main {
     ; 29 boost into a star from a one-tile gap between two stars, 30 the same vertically,
     ; 31 lone explosions in column 0 and row 0: their tiles are restored afterwards (readouts as tests 5-8),
     ; 32 map of an explosion's round core (explode.hits), no play
+    ; Quasar (phase 6, quasar.ALWAYS is on for these; DEBUG_HUD): 33 quasar appears and burns out,
+    ; 34 pickup and invincibility (speed, stars, hostile, explosion, fire, glow), 35 one quasar per galaxy (2 galaxies)
     const ubyte TEST = 0
-    const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31))  ; tests 1-18, 27-31: one galaxy, never ends
+    const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or TEST == 33 or TEST == 34)  ; one galaxy, never ends
     const bool NO_DEATH = TEST == 11 or TEST == 12  ; spawn and frame time tests: the player can't be hurt
 
     ; [TUNE] game flow
@@ -96,6 +99,7 @@ main {
         video.draw_playfield()
         score.start_galaxy()
         hostiles.start_galaxy(score.galaxy)
+        quasar.start_galaxy()
         player.init()
         player.draw()
         ubyte g = score.galaxy
@@ -155,13 +159,15 @@ main {
             if PROFILE
                 prof.mark(7)
             explode.update()
+            quasar.update()
             if PROFILE
                 prof.mark(8)
-            ; the hostile chain lives while an explosion, a countdown it started, or a hurl is going on
-            if explode.live == 0 and hostiles.flying == 0 and stars.blast_countdowns == 0
+            ; the hostile chain lives while an explosion, a countdown it started, a hurl or invincibility is going on
+            if explode.live == 0 and hostiles.flying == 0 and stars.blast_countdowns == 0 and player.invincible == 0
                 score.chain = 0
             player.draw()
             hostiles.draw()
+            quasar.draw()
             score.flush()
             if PROFILE {
                 prof.mark(9)
@@ -185,12 +191,17 @@ main {
             input.read()
         } until input.pressed & input.STOP != 0
         sys.memset(video.SCREEN + 18, 6, video.CHAR_SPACE)
+        video.hud_invincible(player.inv_secs)      ; the countdown shares the PAUSED columns
         input.pressed = 0               ; the resume press is not a game input
     }
 
     sub galaxy_clear() {
         ; GALAXY CLEAR and the time bonus (added now, then the multiplier is x1) for 3 s; then the next galaxy.
         score.time_bonus()
+        quasar.start_galaxy()           ; a quasar still shown (or about to appear) goes
+        player.invincible = 0           ; and invincibility ends
+        player.inv_secs = 0
+        video.hud_invincible(0)
         video.message(10, 14, sc:"galaxy clear", MSG_COLOR)
         video.message(12, 12, sc:"time bonus", MSG_COLOR)
         uword a = video.row_addr(12) + 23
@@ -221,9 +232,10 @@ main {
         video.draw_playfield()
         score.start_galaxy()
         hostiles.start_galaxy(score.galaxy)
+        quasar.start_galaxy()
         player.init()
         player.draw()
-        if TEST == 5 or TEST == 8
+        if TEST == 5 or TEST == 8 or TEST == 34
             player.y = 82                   ; lined up with the star's box (y 82-93): straight bounces back
         if TEST == 29 {
             player.x = 209                  ; box x 209-221 in the gap: star boxes end at 205 and start at 226
@@ -242,6 +254,10 @@ main {
             hostiles.spawn_timer = $FFFF    ; tests from before the hostiles: none spawn
         if TEST >= 13 and TEST < 29
             test_hostiles()
+        if TEST == 34 {
+            stars.start_warning(3)          ; a hostile that stands still at the right edge
+            hostiles.set_speed(0)
+        }
         if input.SCRIPTED
             select_script()
         void play()
@@ -286,11 +302,21 @@ main {
     ubyte[] script_gap = [50, 0, 1, 8 | 16, 9, 8, 30, 1, 0, 0]
     ; test 30: boost up into star 1, keep pushing up, then left out of the gap
     ubyte[] script_gap_v = [50, 0, 1, 1 | 16, 9, 1, 30, 4, 0, 0]
+    ; test 34: boosted hit on star 0, back off left and wait for its quasar; then right into the quasar and on
+    ; through stars 1 and 2 to the hostile at the edge; a fire press there (does nothing while invincible); keep
+    ; pushing right until the invincibility is over
+    ubyte[] script_quasar = [50, 0, 1, 8 | 16, 30, 8, 60, 4, 100, 0, 150, 8, 1, 8 | 16, 250, 8, 250, 8, 0, 0]
 
     sub test_layout() {
         stars.clear()
         when TEST {
-            5, 6, 8, 19, 20 -> stars.add(12, 5, 0)
+            5, 6, 8, 19, 20, 33 -> stars.add(12, 5, 0)
+            34 -> {
+                stars.add(12, 5, 0)         ; hit by the player: leaves the quasar
+                stars.add(15, 5, 1)         ; in the path after the pickup
+                stars.add(17, 5, 2)
+                stars.add(19, 5, 3)         ; turns hostile and stands still at the right edge
+            }
             7, 9 -> {
                 ; 0-1 next to each other, 2 diagonal to 1, 3 two tiles from 2 (outside its explosion)
                 stars.add(12, 5, 0)
@@ -298,7 +324,7 @@ main {
                 stars.add(14, 6, 2)
                 stars.add(16, 6, 3)
             }
-            10 -> {
+            10, 35 -> {
                 ; star 0 is hit; stars 1-5 around it are caught by its explosion
                 stars.add(12, 5, 0)
                 stars.add(11, 4, 1)
@@ -383,6 +409,8 @@ main {
             29 -> input.script = &script_gap
             30 -> input.script = &script_gap_v
             17 -> input.script = &script_hit_back
+            33 -> input.script = &script_boost_hit
+            34 -> input.script = &script_quasar
         }
     }
 
@@ -404,6 +432,8 @@ main {
     uword[3] fl_death                   ; frames of the first 3 deaths
     uword[2] fl_respawn                 ; frames of the first 2 respawns
     uword fl_star1_gone
+    ubyte fl_q_shows                    ; test 35
+    uword[2] fl_q_frame
     ; test 26: hostile slot 0 after the first respawn
     uword fl_push_end                   ; frame its push ended
     uword fl_push_x                     ; box position then
@@ -442,7 +472,7 @@ main {
                         else
                             set_script(&script_still)
                     }
-                    20 -> set_script(&script_boost_hit)
+                    20, 35 -> set_script(&script_boost_hit)
                     22 -> set_script(&script_pause)
                     23, 24 -> {
                         set_script(&script_still)
@@ -497,6 +527,11 @@ main {
             set_script(&script_safe_boost)
             fl_boost_set = true
         }
+        if TEST == 35 and quasar.shows != fl_q_shows {
+            if fl_q_shows < len(fl_q_frame)
+                fl_q_frame[fl_q_shows] = fl_frames
+            fl_q_shows = quasar.shows
+        }
         if TEST == 25 and fl_star1_gone == 0 and stars.state[1] == stars.GONE
             fl_star1_gone = fl_frames
         if TEST == 26 and hostiles.state[0] == hostiles.CHASE {
@@ -529,6 +564,25 @@ main {
         ; frames | lives | dying | safe | death 1 | respawn 1 | death 2 | respawn 2 |
         ; test 25: frame star 1 exploded, else kills and hostiles in use | deaths
         sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
+        if TEST == 35 {
+            ; frames | galaxy | quasars shown in total | appeared this galaxy | frames shown (in this galaxy's
+            ; frame count) of the first two | supernovas (stars gone) this galaxy
+            hex_word(0, fl_frames)
+            hex_byte(5, score.galaxy)
+            hex_digit(8, quasar.shows)
+            hex_digit(10, quasar.appeared as ubyte)
+            hex_word(12, fl_q_frame[0])
+            hex_word(17, fl_q_frame[1])
+            ubyte gone = 0
+            ubyte k
+            for k in 0 to stars.count - 1 {
+                if stars.state[k] == stars.GONE
+                    gone++
+            }
+            hex_digit(22, gone)
+            hex_digit(24, stars.left)
+            return
+        }
         if TEST == 26 {
             ; frames | death 1 | respawn 1 | push end | box x, y then | inside | moves while held | moves after |
             ; pushes | deaths
@@ -689,6 +743,10 @@ main {
             dbg_history[5] = player.anim_frame
         }
 
+        if TEST == 33 or TEST == 34 {
+            quasar_readouts()
+            return
+        }
         if TEST >= 11 and TEST < 29 {
             hostile_readouts()
             return
@@ -785,6 +843,101 @@ main {
         hex_byte(33, score.points_lo)
         hex_digit(36, score.mult)
         hex_byte(38, player.bounces)
+    }
+
+    ubyte q_prev_shows
+    uword q_appear                      ; frame the quasar appeared
+    uword q_end                         ; frame it burnt out or was picked up
+    uword q_inv_end                     ; frame the invincibility ended
+    bool q_prev_inv
+    uword q_pick_x                      ; player box x at the pickup
+    ubyte q_dx10                        ; px moved in the 10 frames after the pickup
+    ubyte q_prev_color
+    ubyte q_color_gap                   ; frames between the last two player color changes
+    ubyte q_color_count
+    ubyte q_gap_early                   ; that gap at 300 frames of invincibility left (fast glow)
+    ubyte q_gap_late                    ; and at 10 left (slow glow)
+    uword[3] q_nova                     ; frames stars 1-3 went GONE (3: turned hostile)
+    uword q_kill                        ; frame of the first hostile kill
+    ubyte q_prev_kills
+    ubyte q_min_lives = 9
+    ubyte q_blink_hidden                ; frames the quasar sprite was hidden while shown (blinking)
+
+    sub quasar_readouts() {
+        ; TEST 33-34. Row 0: frames | shows pickups | appear frame | end frame | invincibility end frame | lives |
+        ; score (hundreds) | chain | kills | boosts.
+        ; Row 24: pickup x | dx in 10 frames | color gap fast, slow | stars 1, 2 gone frames | kill frame |
+        ; min lives | frames hidden blinking
+        if dbg_frames == 1 {
+            sys.memset(video.row_addr(24), 40, video.CHAR_SPACE)
+            sys.memset(video.row_addr(24) + video.COLOR_RAM - video.SCREEN, 40, 1)
+        }
+        if quasar.shows != q_prev_shows {
+            q_prev_shows = quasar.shows
+            q_appear = dbg_frames
+        }
+        if quasar.life != 0 and video.spr_ena & 128 == 0
+            q_blink_hidden++
+        if quasar.shows != 0 and quasar.life == 0 and q_end == 0
+            q_end = dbg_frames
+        bool inv = player.invincible != 0
+        if inv and not q_prev_inv
+            q_pick_x = player.x
+        if q_prev_inv and not inv
+            q_inv_end = dbg_frames
+        q_prev_inv = inv
+        if player.invincible == player.INVINCIBLE_FRAMES - 10
+            q_dx10 = lsb(player.x - q_pick_x)
+        q_color_count++
+        if player.color != q_prev_color {
+            q_prev_color = player.color
+            q_color_gap = q_color_count
+            q_color_count = 0
+        }
+        if player.invincible == 300
+            q_gap_early = q_color_gap
+        if player.invincible == 10
+            q_gap_late = q_color_gap
+        ubyte i
+        for i in 1 to 3 {
+            if i < stars.count and stars.state[i] == stars.GONE and q_nova[i - 1] == 0
+                q_nova[i - 1] = dbg_frames
+        }
+        if hostiles.kills != q_prev_kills {
+            q_prev_kills = hostiles.kills
+            if q_kill == 0
+                q_kill = dbg_frames
+        }
+        if score.lives < q_min_lives
+            q_min_lives = score.lives
+
+        if dbg_frames & 7 != 0
+            return
+        dbg_drew = true
+        hex_word(0, dbg_frames)
+        hex_digit(5, quasar.shows)
+        hex_digit(6, quasar.pickups)
+        hex_word(8, q_appear)
+        hex_word(13, q_end)
+        hex_word(18, q_inv_end)
+        hex_digit(23, score.lives)
+        hex_byte(25, score.points_hi)
+        hex_byte(27, score.points_mid)
+        hex_byte(29, score.points_lo)
+        hex_digit(32, score.chain)
+        hex_digit(34, hostiles.kills)
+        hex_byte(36, player.boosts)
+        uword r = 24 * 40
+        hex_word(r + 0, q_pick_x)
+        hex_byte(r + 5, q_dx10)
+        hex_digit(r + 8, q_gap_early)
+        hex_digit(r + 10, q_gap_late)
+        hex_word(r + 12, q_nova[0])
+        hex_word(r + 17, q_nova[1])
+        hex_word(r + 22, q_kill)
+        hex_digit(r + 27, q_min_lives)
+        hex_byte(r + 29, q_blink_hidden)
+        hex_digit(r + 32, quasar.appeared as ubyte)
     }
 
     sub hostile_readouts() {

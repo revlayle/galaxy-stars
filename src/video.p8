@@ -179,6 +179,7 @@ _color
     const ubyte HUD_TIME_COL = 27       ; icon, then 2 digits
     const ubyte HUD_MULT_COL = 32       ; icon, then 1 digit
     const ubyte HUD_LIVES_COL = 36      ; icon, then 1 digit
+    const ubyte HUD_INV_COL = 20        ; invincibility: icon, then seconds left; in the free columns 18-23 (PAUSED)
 
     sub draw_hud() {
         ; Labels and icons. The values are drawn by the hud_* routines.
@@ -330,6 +331,19 @@ _bcd        .byte ?, ?, ?
         if main.DEBUG_HUD
             return                      ; the debug readouts use the HUD row
         put_digit(SCREEN + HUD_LIVES_COL + 1, n)
+    }
+
+    sub hud_invincible(ubyte secs) {
+        ; Seconds of invincibility left (spec section 9); 0 clears the field.
+        if main.DEBUG_HUD
+            return                      ; the debug readouts use the HUD row
+        if secs == 0 {
+            @(SCREEN + HUD_INV_COL) = CHAR_SPACE
+            @(SCREEN + HUD_INV_COL + 1) = CHAR_SPACE
+            return
+        }
+        hud_icon(HUD_INV_COL, assets.CHAR_QUASAR, assets.CHAR_QUASAR_COLOR)
+        @(SCREEN + HUD_INV_COL + 1) = '0' as ubyte + secs
     }
 
     sub put_bcd2(uword addr, ubyte bcd) {

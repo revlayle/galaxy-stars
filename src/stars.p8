@@ -6,6 +6,7 @@
 %import explode
 %import score
 %import hostiles
+%import quasar
 
 stars {
     const ubyte MAX = 55                ; [TUNE] stars at most (designer, 2026-10-18: was 45)
@@ -210,6 +211,11 @@ stars {
         ; dx, dy: player box minus star box (both corners); equal sizes but one, so close to centre minus centre.
         ; A different star touched during a knockback that started in an earlier frame stops the knockback there:
         ; no second bounce, so the player can't be trapped bouncing between two stars. The touch still counts.
+        ; The invincible player passes through and the star explodes at once.
+        if player.invincible != 0 {
+            blow(i)
+            return
+        }
         if player.knock_left != 0 and player.knock_left < player.KNOCK_FRAMES and i != player.knock_star {
             player.knock_left = 0
             stops++
@@ -245,6 +251,15 @@ stars {
             set_color(i, hit1_color[video.star_color[kind[i]] & 7])
         else
             set_color(i, hit2_color[video.star_color[kind[i]] & 7])
+    }
+
+    sub blow(ubyte i) {
+        ; Touched by the invincible player: a supernova with no countdown. update() sets it off this frame, or
+        ; the next when an explosion has already started this frame (frame time).
+        if state[i] != COUNTDOWN
+            start_countdown(i)
+        timer[i] = 0
+        novas_due = true
     }
 
     sub caught(ubyte i, ubyte extra) -> bool {
@@ -458,5 +473,6 @@ _done
         video.tiles[idx] = 0
         score.supernova()
         explode.start(col[i], row[i])   ; draws over the tile; it is restored as empty space afterwards
+        quasar.chance(col[i], row[i])
     }
 }

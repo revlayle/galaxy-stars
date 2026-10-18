@@ -32,6 +32,7 @@ char rows 1-24    playfield: 20 x 12 tiles, each tile 2x2 chars (16x16 px)
 
 - HUD fields (left to right): score (8 digits), time left (clock/hourglass icon + 2 digits), multiplier (small stylised x icon + 1 digit), lives (yellow star icon + 1 digit). Columns: `SCORE` label 1, digits 7-14; time icon 27, digits 28-29; multiplier icon 32, digit 33; lives icon 36, digit 37.
 - The galaxy number is not on the HUD; it is shown at the start of each galaxy (§11).
+- While invincible: quasar icon in column 20 and the seconds left in column 21 (§9).
 - The three icons are custom hi-res chars, one char each: an hourglass or clock, an x drawn small and centred in the 8x8 cell, and a 5-pointed star in yellow (7). HUD text and digits stay white.
 - Playfield is 320 x 192 px, in playfield coordinates `px 0..319`, `py 0..191`. `(0,0)` is the top-left of tile `(0,0)` at char row 1.
 - Hardware sprite position for an object whose 24x21 frame starts at `(px, py)`: `sprite_x = px + 24`, `sprite_y = py + 50 + 8` (the +8 is the HUD row).
@@ -242,7 +243,9 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - Explosions and hostiles can't hurt the player.
   - The sprite glows through multiple colors rapidly.
   - In the last second of invincibility the glow slows down as a warning.
+  - **HUD countdown** (designer, 2026-10-18): while invincible, the HUD shows a quasar icon (cyan, hi-res) and the seconds left, 8 down to 1, in columns 20-21 (the free middle, shared with PAUSED). It clears when the invincibility ends.
 - A 1 in 100 chance means a quasar shows up in roughly a third of galaxies at 45 stars, more at 55, and fewer at 15 **[TUNE]** if it should be more common.
+- Details (phase 6): the quasar's box is a star's box (12 x 12 in its tile); the player can pick it up while safe after a respawn, not while dying. The pickup ends a running boost, its cooldown and a knockback. A star touched while invincible goes off at once whatever its state (a `WARNING` star goes supernova instead of hostile, a `COUNTDOWN` star skips the rest of it); like every explosion start, it waits a frame if another explosion already started that frame. The glow cycles 8 colors every 2 frames, every 8 frames in the last second **[TUNE]**. A quasar still shown when the galaxy is cleared goes away with the clear screen. Debug switch `quasar.FORCE` makes every supernova leave one (still once per galaxy).
 
 ## 10. Galaxies
 

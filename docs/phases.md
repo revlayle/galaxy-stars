@@ -203,12 +203,27 @@ Done when:
 - Regression: tests 1, 5, 14 and 17 give the same numbers as before (x 154 -> 304; countdown 105, supernova 205; hurl 185 -> 281; score 3,100). Test 12 with 8 different seeds, 45 s: 0 dropped frames, slowest frames 233 to over 255 raster lines (the readout caps at 255). One run before `NO_DEATH` (player dying, run ending early) counted 1 dropped frame; it didn't happen again in 16 more runs with deaths on or off.
 
 ## Phase 6: Quasar and invincibility
-**Status:** not started
+**Status:** done
 **Spec:** §9
 
 Done when:
-- [ ] With a debug switch forcing the chance to 100%, the quasar appears, burns out after 5 s, and pickup gives 8 s of invincibility with every listed effect.
-- [ ] Only one quasar per galaxy.
+- [x] With a debug switch forcing the chance to 100%, the quasar appears, burns out after 5 s, and pickup gives 8 s of invincibility with every listed effect.
+- [x] Only one quasar per galaxy.
+
+**Notes:**
+- New module `src/quasar.p8`. `stars.supernova()` calls `quasar.chance()`: 1 in 100 (`stars.rand_below(100)`), only if this galaxy has had no quasar. It is placed on the star's tile and appears after `explode.FRAMES` frames, counted down after `explode.update`, so on the frame the explosion ends. Hurl explosions aren't supernovas and never roll. Program ends at `$4264`.
+- Debug switch: `quasar.FORCE` (every supernova leaves one, still once per galaxy). Off. Tests 33-35 turn it on through `quasar.ALWAYS`.
+- Quasar: sprite 7, light blue (14), 2 placeholder frames (core, flat disc, two dashed jets), a picture every 4 frames. Shown 250 frames; in the last 50 it blinks 4 frames shown, 4 hidden. Its box is a star's box (tile pixels 2-13, 12 x 12); the player box overlapping it picks it up, also while safe after a respawn, not while dying.
+- Invincibility: `player.invincible` (uword, 400 frames). Stick moves at boost speed (the boost table), spin every frame, fire does nothing. `player.hurtable()` is false, so hostiles and explosions can't hurt. Glow: 8 colors (white, yellow, light green, cyan, light blue, purple, light red, orange), every 2 frames, every 8 in the last 50 frames [art phase / TUNE].
+- Implementation choices (not in the spec): the pickup ends a running boost, its cooldown and a knockback, so control is back at once and fire works as soon as invincibility ends. A star touched while invincible goes off even if it is in `WARNING` (it goes supernova, not hostile) or already in `COUNTDOWN` (`stars.blow`: countdown with timer 0, set off by `stars.update` in the same frame, or the next if an explosion already started this frame). It scores as a supernova (100 x mult, multiplier +1). Hostiles touched are freed and score the next chain step (`hostiles.check_player`). The chain stays alive while invincible (the reset check in `main.play` includes `player.invincible`).
+- The quasar (shown or still waiting) is removed when the galaxy clear screen starts; it stayed over the GALAXY CLEAR text before. `quasar.start_galaxy()` resets it at every galaxy start.
+- **HUD countdown** (designer, 2026-10-18, after the report; spec §2, §9): a warning that invincibility is wearing off, on top of the slowing glow. A quasar icon (`icon quasar`, cyan) and the seconds left (8 to 1) in HUD columns 20-21 (`video.hud_invincible`), counted by `player.inv_secs`/`inv_frames`; cleared when it ends, at `player.init()` and at galaxy clear (invincibility ends there). The pause clears columns 18-23 and redraws it on resume. Test 34 with the normal HUD: 8 shown right after the pickup, 1 in the last second, cleared after it with the player yellow again.
+- The designer agreed with the implementation choices above (2026-10-18).
+- Designer played the build with `quasar.FORCE` on (2026-10-18): approved, "good for now". `FORCE` back off.
+- Self-tests (`input.SCRIPTED`, `main.DEBUG_HUD`): 33 quasar appears and burns out (layout of test 5), 34 pickup and invincibility (star 0 hit, stars at (15,5) and (17,5) and a still hostile from (19,5) in the path, a fire press while invincible), 35 one quasar per galaxy (layout of test 10 in two galaxies, flow test). Readouts for 33-34 on row 0 and row 24, see `main.quasar_readouts`.
+- Results: test 33: supernova, quasar shown at frame 187 at the star's tile, gone at 437 (250 frames), hidden 24 of its last 50 frames. Test 34: picked up at 363 (box x 183); 37 px in the next 10 frames (3.75 px/f boost speed); star 1 went off at 376 and star 2 at 385, each when the player reached it (no bounce: the positions match straight boost-speed travel); the hostile destroyed at 393, chain 1; the player passed through both explosions' cores, lives stayed 3; the fire press didn't start a boost (boosts stays 1); invincibility ended at 763 (400 frames); glow gap 2 frames at 300 left, 8 frames at 10 left. Score 1,900 (100 + 100 x1 + 100 x2 + 500 x3). Test 35: galaxy 1: 6 supernovas, 1 quasar (at frame 187); galaxy 2: the second one, total 2.
+- Regression: tests 5 (countdown 105, supernova 205), 14 (hurl 185 -> 281), 17 (3,100, chain 2) and 20 (61,400, 4 lives) give the phase 5 numbers.
+- Frame time (test 12, galaxy 21): 16 fixed seeds on the phase 5 code and on this code with the quasar roll switched off (so both play the same game): the same dropped frames in both, 1 frame in one seed, 0 in the other 15. The slowest frame is 1-2 raster lines longer with this phase's checks. The one dropped frame in a seed shows the margin at galaxy 21 is still thin (phase 5 noted the same once); the explosion animation in phase 7 has to be checked against it. One more run with the startup seed also dropped 1 frame, with no quasar in that game.
 
 ## Phase 7: Art and sound
 **Status:** not started

@@ -1,6 +1,6 @@
 ; Player (spec section 5): 8-direction movement, boost with cooldown, playfield clamp, spin animation,
 ; boost glow, the knockback after hitting a star (spec section 6), and losing a life: the death effect,
-; respawn in the centre and the safe time (spec section 8).
+; respawn in the centre and the safe time (spec section 8), and invincibility after a quasar pickup (spec section 9).
 ; Position is the top-left of the 13x13 collision box in playfield pixels plus a 1/16 px fraction.
 ; The box sits at pixel (4,4) of the 24x21 sprite frame (centred in the 21x21 art).
 
@@ -41,6 +41,12 @@ player {
     const ubyte SAFE_BLINK = 4          ; [TUNE] the sprite is shown 4 frames, hidden 4
     ; [art phase] death effect placeholder: the sprite flashes through these, one every 2 frames
     ubyte[4] die_colors = [1, 2, 7, 0]
+    ; invincibility (spec section 9): 8 s; the color cycles every 2 frames, every 8 in the last second [TUNE]
+    const uword INVINCIBLE_FRAMES = 400
+    const ubyte INVINCIBLE_SECS = INVINCIBLE_FRAMES / 50    ; HUD countdown
+    const ubyte INVINCIBLE_SLOW = 50
+    ; [art phase] white, yellow, light green, cyan, light blue, purple, light red, orange
+    ubyte[8] invincible_colors = [1, 7, 13, 3, 14, 4, 10, 8]
 
     ; joystick bits (input.UP/DOWN/LEFT/RIGHT = bits 0-3) -> axis speeds. Opposite directions cancel.
     byte[16] dir_vx = [0, 0, 0, 0, -SPEED, -SPEED_DIAG, -SPEED_DIAG, -SPEED,
@@ -76,6 +82,9 @@ player {
     bool gone                           ; the death effect ended with no lives left: game over
     ubyte deaths                        ; lives lost (debug readout)
     ubyte respawns                      ; times reappeared (debug readout and self-test hooks)
+    uword invincible                    ; frames of invincibility left
+    ubyte inv_secs                      ; seconds left, shown on the HUD (8 down to 1)
+    ubyte inv_frames                    ; frames left in the current second
 
     sub init() {
         x = START_X
@@ -95,6 +104,21 @@ player {
         dying = 0
         safe = 0
         gone = false
+        invincible = 0
+        inv_secs = 0
+        video.hud_invincible(0)
+    }
+
+    sub make_invincible() {
+        ; Quasar pickup. A running boost, its cooldown and a knockback end: control is back at once, and fire
+        ; works again as soon as the invincibility ends.
+        invincible = INVINCIBLE_FRAMES
+        inv_secs = INVINCIBLE_SECS
+        inv_frames = 50
+        video.hud_invincible(inv_secs)
+        boost_left = 0
+        cooldown = 0
+        knock_left = 0
     }
 
     sub hurt() {
@@ -113,7 +137,7 @@ player {
     sub hurtable() -> bool {
         if main.NO_DEATH
             return false
-        return dying == 0 and safe == 0
+        return dying == 0 and safe == 0 and invincible == 0
     }
 
     sub update() {
@@ -145,7 +169,8 @@ player {
             move(vx, vy)
             spin()
         } else {
-            if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 {
+            ; invincible: boost speed in the stick direction, fire does nothing
+            if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 and invincible == 0 {
                 boost_left = BOOST_FRAMES
                 boosts++
             }
@@ -153,7 +178,7 @@ player {
             ubyte dir = input.held & %1111
             vx = dir_vx[dir]
             vy = dir_vy[dir]
-            if boost_left != 0 {
+            if boost_left != 0 or invincible != 0 {
                 vx = boost_vx[dir]
                 vy = boost_vy[dir]
             }
@@ -176,6 +201,19 @@ player {
                 cooldown = COOLDOWN_FRAMES
         } else if cooldown != 0
             cooldown--
+        if invincible != 0 {
+            ubyte glow = (lsb(invincible) >> 1) & 7
+            if invincible <= INVINCIBLE_SLOW
+                glow = (lsb(invincible) >> 3) & 7
+            color = invincible_colors[glow]
+            invincible--
+            inv_frames--
+            if inv_frames == 0 {
+                inv_frames = 50
+                inv_secs--
+                video.hud_invincible(inv_secs)     ; reaches 0 (cleared) with the invincibility
+            }
+        }
     }
 
     sub bounce(byte dx, byte dy) {
@@ -256,7 +294,7 @@ player {
     sub spin() {
         ; Called on frames the player moves. Clockwise plays the frames forward.
         anim_timer++
-        if boost_left == 0 and anim_timer < SPIN_DELAY
+        if boost_left == 0 and invincible == 0 and anim_timer < SPIN_DELAY
             return
         anim_timer = 0
         if spin_ccw {
