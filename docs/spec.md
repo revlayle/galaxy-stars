@@ -297,7 +297,7 @@ Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/til
 
 ## 13. Sound
 
-Basic SID effects only, no music, built in the polish phase: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
+Basic SID effects only, no music, built in phase 8: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
 
 ## 14. Source layout
 

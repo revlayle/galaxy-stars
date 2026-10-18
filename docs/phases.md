@@ -225,8 +225,32 @@ Done when:
 - Regression: tests 5 (countdown 105, supernova 205), 14 (hurl 185 -> 281), 17 (3,100, chain 2) and 20 (61,400, 4 lives) give the phase 5 numbers.
 - Frame time (test 12, galaxy 21): 16 fixed seeds on the phase 5 code and on this code with the quasar roll switched off (so both play the same game): the same dropped frames in both, 1 frame in one seed, 0 in the other 15. The slowest frame is 1-2 raster lines longer with this phase's checks. The one dropped frame in a seed shows the margin at galaxy 21 is still thin (phase 5 noted the same once); the explosion animation in phase 7 has to be checked against it. One more run with the startup seed also dropped 1 frame, with no quasar in that game.
 
-## Phase 7: Art and sound
+## Phase 7: Art
 **Status:** not started
-**Spec:** §12, §13
+**Spec:** §12
 
-Build: final sprites and chars (8 star kinds, 3-frame explosion animation, specks), invincibility glow, sound effects.
+Build: final sprites and chars, replacing the placeholders listed in earlier notes:
+- 8 stationary star kinds; the shared char colors ($D022/$D023) picked for brighter star glows while the specks still look faint (phase 1 note).
+- Hit feedback (hits 1 and 2) and countdown flash colors (phase 3 note); the red warning flash (phase 4 note: may be tweaked).
+- 3-frame explosion animation (expanding, then fading), including how overlapping explosions draw (phase 3 note: stray slivers).
+- Player and hostile spin frames, the death effect with shrink frames (phase 5 note), the quasar, the boost and invincibility glow colors.
+- HUD icons and background specks if they need it.
+
+Frame time is the main risk: at galaxy 21, test 12 already drops 1 frame in 1 of 16 seeds (phase 6 notes). Measure with the CIA-timer profiler (`src/prof.p8`) before and after, on the same 16 seeds. Animation steps can be spread over frames (e.g. one explosion's step per frame) as long as no explosion visibly lags.
+
+Done when:
+- [ ] Screenshots of: all 8 star kinds, a star at hits 1 and 2, a countdown, a red warning, each explosion frame, two overlapping explosions, the player normal/boosting/invincible, a hostile, the quasar, the death effect.
+- [ ] Test 12 at galaxy 21 on the 16 seeds: no more dropped frames than before this phase; dropped-frame count and slowest frame reported.
+- [ ] The phase 3-6 regression tests give the same numbers.
+- [ ] Char budget: chars used reported (spec §12).
+
+## Phase 8: Sound
+**Status:** not started
+**Spec:** §13
+
+Build: SID effects, table-driven, one voice, stepped by the frame IRQ (adapt `src/sound.p8` from Smashy Smashy): boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear.
+
+Done when:
+- [ ] Every effect is triggered in a scripted run (an effect counter on the debug HUD).
+- [ ] Frame time unchanged (test 12, same 16 seeds).
+- [ ] Report lists which effects cut each other off, for the designer to judge by ear.
