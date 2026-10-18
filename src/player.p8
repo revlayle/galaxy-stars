@@ -1,10 +1,12 @@
 ; Player (spec section 5): 8-direction movement, boost with cooldown, playfield clamp, spin animation,
-; boost glow, and the knockback after hitting a star (spec section 6).
+; boost glow, the knockback after hitting a star (spec section 6), and losing a life: the death effect,
+; respawn in the centre and the safe time (spec section 8).
 ; Position is the top-left of the 13x13 collision box in playfield pixels plus a 1/16 px fraction.
 ; The box sits at pixel (4,4) of the 24x21 sprite frame (centred in the 21x21 art).
 
 %import input
 %import video
+%import score
 
 player {
     const ubyte BOX = 13                ; collision box size [TUNE]
@@ -32,6 +34,12 @@ player {
     const ubyte SPIN_DELAY = 3          ; game frames per picture at normal speed (1 while boosting)
     const ubyte COLOR = 7               ; yellow
     ubyte[4] glow_colors = [1, 7, 8, 7] ; boost glow: white, yellow, orange, yellow, every 2 frames
+    ; losing a life (spec section 8)
+    const ubyte DIE_FRAMES = 50         ; 1 s death effect, the player stays where it was hit
+    const ubyte SAFE_FRAMES = 100       ; 2 s after reappearing: hostiles and explosions can't hurt
+    const ubyte SAFE_BLINK = 4          ; [TUNE] the sprite is shown 4 frames, hidden 4
+    ; [art phase] death effect placeholder: the sprite flashes through these, one every 2 frames
+    ubyte[4] die_colors = [1, 2, 7, 0]
 
     ; joystick bits (input.UP/DOWN/LEFT/RIGHT = bits 0-3) -> axis speeds. Opposite directions cancel.
     byte[16] dir_vx = [0, 0, 0, 0, -SPEED, -SPEED_DIAG, -SPEED_DIAG, -SPEED,
@@ -61,6 +69,11 @@ player {
     byte vx                             ; speed moved with this frame (hostile hurl direction)
     byte vy
     bool boosted                        ; the boost was running this frame (hits and hurls count as boosted)
+    ubyte dying                         ; frames of the death effect left; no control or contacts meanwhile
+    ubyte safe                          ; frames of safety left after reappearing
+    bool gone                           ; the death effect ended with no lives left: game over
+    ubyte deaths                        ; lives lost (debug readout)
+    ubyte respawns                      ; times reappeared (debug readout and self-test hooks)
 
     sub init() {
         x = START_X
@@ -77,9 +90,50 @@ player {
         vx = 0
         vy = 0
         boosted = false
+        dying = 0
+        safe = 0
+        gone = false
+    }
+
+    sub hurt() {
+        ; Touched by a hostile or caught in an explosion: a life lost, the death effect starts.
+        score.lose_life()
+        deaths++
+        dying = DIE_FRAMES
+        boost_left = 0
+        cooldown = 0
+        knock_left = 0
+        vx = 0
+        vy = 0
+        boosted = false
+    }
+
+    sub hurtable() -> bool {
+        if main.NO_DEATH
+            return false
+        return dying == 0 and safe == 0
     }
 
     sub update() {
+        if dying != 0 {
+            ; the death effect plays where the player was hit; then the centre, or game over
+            dying--
+            color = die_colors[(dying >> 1) & 3]
+            anim_timer = SPIN_DELAY     ; fast spin: a picture every frame
+            spin()
+            if dying == 0 {
+                if score.lives == 0
+                    gone = true
+                else {
+                    init()
+                    safe = SAFE_FRAMES
+                    respawns++
+                }
+            }
+            return
+        }
+        if safe != 0
+            safe--
         if knock_left != 0 {
             ; knockback: no joystick control (fire presses are ignored too); the boost keeps running
             knock_left--
@@ -211,7 +265,11 @@ player {
 
     sub draw() {
         ; Sprite shadow registers. At the top/left edges the frame starts at -4: the uword/ubyte wrap-around
-        ; in set_sprite still gives the right hardware position.
+        ; in set_sprite still gives the right hardware position. Blinks while safe.
+        if gone or (safe != 0 and (safe / SAFE_BLINK) & 1 != 0) {
+            video.hide_sprite(0)
+            return
+        }
         video.set_sprite(0, assets.SPR_PLAYER_0 + anim_frame, color, x - BOX_INSET, y - BOX_INSET)
     }
 }

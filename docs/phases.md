@@ -141,14 +141,32 @@ Done when:
 - Results: test 11: warnings at frames 300, 600, 900, 1200, 1500, 1800, then 6 active and no more. Test 12 (galaxy 11): every 50 frames up to 6 by frame 300; after the boost at frame 600 the next spawn came at 614, when the first hurled one exploded and freed its slot; max active 6, 0 dropped frames. Test 13: lives 3 -> 2, once. Test 14: hurled at box x 185, exploded at 281 (96 px) 16 frames later, score 500. Test 15: exploded on touching the second hostile after 6 frames (x 185 -> 221); both destroyed, score 500 + 1,000, chain 2. Test 16: the end-of-flight explosion at x 281 put star 1 (tile 18,4, not touched) into its countdown; it went supernova 100 frames later. Test 18: exploded on touching star 1 after 13 frames (x 185 -> 263) and started its countdown. Test 17: supernova 100 at x1 (raises to x2), then the two hostiles in it 500 x2 and 1,000 x2: 3,100. Tests 1-10 give the same numbers as before.
 
 ## Phase 5: Game flow
-**Status:** not started
+**Status:** done
 **Spec:** §8 (lives), §10, §11
 
 Build: lives, extra lives, life-lost sequence and respawn, galaxy start/clear with bonus, galaxy progression and difficulty tables, title, game over, pause, session high score.
 
 Done when:
-- [ ] Full loop: title → galaxy 1 → clear → galaxy 2 → game over → title.
-- [ ] Clear bonus and extra life checked with scripted runs.
+- [x] Full loop: title → galaxy 1 → clear → galaxy 2 → game over → title.
+- [x] Clear bonus and extra life checked with scripted runs.
+
+**Notes:**
+- New module `src/title.p8` (title and game-over screens). The state machine is in `main.start()`: title, new game, then galaxy start, play and galaxy clear until play returns false (game over). Program ends at `$42C4`.
+- Designer decisions (2026-10-17): when the last star is destroyed, play goes on until the explosions and hurl flights are over, and the player can still be hurt meanwhile. A boost during the 2 s of safety still hurls hostiles. Title: text, background specks and the spinning player star, no attract pages (may be expanded later). Spec §8 and §11 updated.
+- Galaxy clear: when `stars.left` reaches 0 the timer and the multiplier stop (the bonus uses that moment's seconds and multiplier). Play ends when no explosion runs, the restore queue is empty, no hurl is flying and no death effect is playing. A death in that time resets the multiplier to x1 before the bonus; if it was the last life, it is game over instead of a clear.
+- Clear screen: "GALAXY CLEAR" and "TIME BONUS n", where n is the total added (seconds x 100 x multiplier, no leading zeros), 3 s. Then the multiplier is x1 and the next galaxy starts.
+- Galaxy start: "GALAXY nn" at char row 9 (above the player) for 2 s. The stars appear one per frame in random order (15-45 stars: 0.3-0.9 s); the spec said "a few per frame". The message is redrawn each frame, since a star at tile column 7 or 12 of row 4 is drawn under it, and those tiles are restored when it goes. The galaxy number shows up to 99.
+- Losing a life: the life is taken at the hit, so the HUD shows 0 during the last death effect; game over comes when that effect ends. During the effect there is no control and no contact with stars, hostiles or explosions; boost, cooldown and knockback are cleared. Hostiles keep chasing the spot where the player was.
+- Death effect placeholder: the sprite flashes white, red, yellow, black (one every 2 frames) and spins a picture per frame. Shrink frames come with the art in phase 7. Safety blink: 4 frames shown, 4 hidden.
+- The phase 3-4 stopgaps (each explosion and each hostile takes at most one life) are gone; the death effect and safety replace them.
+- Pause: "PAUSED" in the empty HUD columns 18-23, so nothing on the playfield has to be restored (an explosion could be drawn there). Run/Stop again resumes; the resume press doesn't reach the game.
+- Game over: "GAME OVER" and "HIGH SCORE" over the frozen playfield (hostile sprites stay and can cover the text). The high score is updated first, so it already includes this game. Fire after 1 s returns to the title.
+- Extra lives: `score.check_extra()` after every score add. One event can pass several thresholds (a life each, up to 9). At the score maximum (99,999,900) the thresholds stop (`no_more_lives`), so the check can't loop forever.
+- Hostiles tend to sit on the respawn point: in the scripted runs a hostile at the centre killed the player on the first frame after the safety ended, so three lives went in about 8 s. As in the spec; a feel item for the designer.
+- Self-tests (`main.TEST` with `input.SCRIPTED`; DEBUG_HUD where noted): 19 full loop, 20 clear bonus and extra life, 21 extra life thresholds (DEBUG_HUD, no play), 22 pause, 23 death and respawn (DEBUG_HUD), 24 boost hurl while safe (DEBUG_HUD), 25 explosion over the respawn point while safe (DEBUG_HUD). Tests 1-18 run their old setup through the new play loop (`main.OLD_TEST`: never cleared, halts at game over). Tests 11-12 make the player unhurtable (`main.NO_DEATH`); otherwise the player dies before the stress test boosts into the pack.
+- Results: test 19: title, fire, GALAXY 01 with the star appearing, supernova, GALAXY CLEAR with TIME BONUS 11400 (57 s x 100 x2) and score 11,500, GALAXY 02 with 17 random stars, three lives lost to hostiles, GAME OVER with HIGH SCORE 00011500, then the title showing 00011500. Test 20 (start score 19,900): supernova -> 20,000, x2, lives 3 -> 4; clear bonus 11,400 -> 31,400, x1. Test 21: +60,000 in one event: lives 3 -> 6, next 80,000; then 9 x 100,000: 960,000, lives 9 (cap), next 980,000; at the score maximum 99,999,900 the flag is set and lives stay 9. Test 22: two screenshots 1.2 s apart during the pause are pixel-identical (timer 52, hostile still); after Run/Stop the timer runs on. Test 23: death at frame 152, back in the centre at 202 (+50), the hostile passed through during safety, next death at 302 (the first frame after safety), then 352 and the third. Test 24: a boost right after the respawn hurled the hostile during safety (kills 1, lives 2, one death). Test 25: death at 159, respawn at 209, star 1's explosion over the respawn point at 221: no death, lives 2.
+- Designer played the build (2026-10-17): approved; more feedback after longer play.
+- Regression: tests 1, 5, 14 and 17 give the same numbers as before (x 154 -> 304; countdown 105, supernova 205; hurl 185 -> 281; score 3,100). Test 12 with 8 different seeds, 45 s: 0 dropped frames, slowest frames 233 to over 255 raster lines (the readout caps at 255). One run before `NO_DEATH` (player dying, run ending early) counted 1 dropped frame; it didn't happen again in 16 more runs with deaths on or off.
 
 ## Phase 6: Quasar and invincibility
 **Status:** not started

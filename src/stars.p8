@@ -55,6 +55,8 @@ stars {
     ubyte[MAX] @shared pick_any
     ubyte @shared n_far
     ubyte @shared n_any
+    ubyte[MAX] reveal_order             ; galaxy start: stars in the order they appear
+    ubyte revealed
 
     sub seed() {
         cx16.r0 = mkword(c64.RASTER, c64.CIA1TAH)
@@ -131,6 +133,37 @@ stars {
         video.tiles[video.row_start[r] + c] = i + 1
         count++
         left++
+    }
+
+    sub hide_for_reveal() {
+        ; Galaxy start: take the placed stars off the map (the specks stay) and shuffle the order they come back.
+        sys.memset(&video.tiles, len(video.tiles), 0)
+        ubyte i = 0
+        while i < count {
+            reveal_order[i] = i
+            i++
+        }
+        ubyte j = count
+        while j > 1 {
+            i = rand_below(j)
+            j--
+            ubyte tmp = reveal_order[i]
+            reveal_order[i] = reveal_order[j]
+            reveal_order[j] = tmp
+        }
+        revealed = 0
+    }
+
+    sub reveal_next() {
+        ; The next star back on the map and the screen (nothing when all are back).
+        if revealed >= count
+            return
+        ubyte i = reveal_order[revealed]
+        revealed++
+        ubyte idx = video.row_start[row[i]]
+        idx += col[i]                   ; two steps: see supernova()
+        video.tiles[idx] = i + 1
+        video.draw_tile(col[i], row[i])
     }
 
     sub in_free_area(ubyte c, ubyte r) -> bool {

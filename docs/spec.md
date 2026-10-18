@@ -222,7 +222,9 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
   - The galaxy timer keeps running.
   - The player is safe for 2 s after reappearing (sprite blinks): hostiles pass through them harmlessly and explosions don't hurt. Hitting stars works normally.
   - Hostile stars remain where they are.
-- No lives left → game over (§11).
+- The life is taken at the hit (the HUD shows the new count at once). During the death effect the player has no control and touches nothing; boost and cooldown are cleared. A boost during the 2 s of safety still hurls hostiles (designer, 2026-10-17).
+- No lives left → game over (§11) when the last death effect ends.
+- One score event can pass several extra-life thresholds: a life for each, up to 9. At the maximum score the thresholds stop.
 
 ## 9. Quasar and invincibility
 
@@ -253,12 +255,13 @@ TITLE --fire--> NEW_GAME --> GALAXY_START --> PLAYING
 PLAYING --stars_left = 0--> GALAXY_CLEAR --> GALAXY_START (galaxy + 1)
 PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 ```
-- **TITLE:** "GALAXY STARS", "PRESS FIRE", session high score. Fire (edge-triggered) starts a game. Details (logo, attract pages) are decided in the game-flow phase.
-- **GALAXY_START:** "GALAXY 01" centred on the playfield for 2 s, the stars appear (random order, a few per frame) and the player sits in the centre. No control, timer not running. Then PLAYING.
+- **TITLE:** "GALAXY STARS" (yellow), the player star spinning under it, "PRESS FIRE" blinking, "HIGH SCORE" with the session high score, faint background specks. No attract pages for now (designer, 2026-10-17: may be expanded later). Fire (edge-triggered) starts a game.
+- **GALAXY_START:** "GALAXY 01" above the player (char row 9) for 2 s while the stars appear in random order, one per frame **[TUNE]**; the player sits in the centre. No control, timer not running. Then PLAYING.
 - **PLAYING:** as described above.
-- **GALAXY_CLEAR:** hostiles and explosions are gone. "GALAXY CLEAR", "TIME BONUS <n>" with the bonus added, about 3 s, then the multiplier resets and the next galaxy starts **[TUNE]**.
-- **Pause:** Run/Stop toggles pause during PLAYING; everything freezes, "PAUSED" shown.
-- **GAME_OVER:** "GAME OVER" over the frozen playfield; fire accepted after 1 s → TITLE.
+- **Last star destroyed** (designer, 2026-10-17): the timer and the multiplier stop at once. Play goes on (the player keeps control and can still be hurt) until no explosion is running, no hurled hostile is flying and no death effect is playing. A death meanwhile resets the multiplier before the bonus; if it was the last life, it is game over.
+- **GALAXY_CLEAR:** "GALAXY CLEAR", "TIME BONUS <n>" (the total added: seconds x 100 x multiplier) with the bonus added, 3 s, then the multiplier resets and the next galaxy starts **[TUNE]**. The galaxy number is shown up to 99.
+- **Pause:** Run/Stop toggles pause during PLAYING; everything freezes, "PAUSED" shown in the empty middle of the HUD row.
+- **GAME_OVER:** "GAME OVER" and the high score (already including this game) over the frozen playfield; fire accepted after 1 s → TITLE.
 - **Session high score** in RAM, shown on the title and game-over screens.
 
 ## 12. Assets

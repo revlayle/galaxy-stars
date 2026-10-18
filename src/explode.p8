@@ -20,7 +20,6 @@ explode {
     ubyte[MAX] col
     ubyte[MAX] row
     ubyte[MAX] timer                    ; frames left, 0 = free slot
-    bool[MAX] hit_player                ; this explosion already took a life (phase 3: no respawn yet)
     ubyte started                       ; explosions started (debug readout)
     ubyte starts                        ; explosions started this frame
     ubyte live                          ; explosions running
@@ -69,7 +68,6 @@ explode {
         col[s] = c
         row[s] = r
         timer[s] = FRAMES
-        hit_player[s] = false
         started++
         starts++
         live++
@@ -174,7 +172,8 @@ explode {
     }
 
     sub check_player() {
-        if live == 0
+        ; Not while the player is dying or safe after reappearing.
+        if live == 0 or not player.hurtable()
             return
         ; The area is whole tiles, so box overlap is the same as the player's tile range overlapping it.
         ubyte pc0 = lsb(player.x >> 4)
@@ -183,11 +182,11 @@ explode {
         ubyte pr1 = (player.y + player.BOX - 1) >> 4
         ubyte s
         for s in 0 to MAX - 1 {
-            if timer[s] != 0 and not hit_player[s] {
+            if timer[s] != 0 {
                 area(s)
                 if pc0 <= c1 and c0 <= pc1 and pr0 <= r1 and r0 <= pr1 {
-                    hit_player[s] = true
-                    score.lose_life()
+                    player.hurt()
+                    return
                 }
             }
         }

@@ -168,10 +168,78 @@ video {
         ; Score in hundreds, 6 BCD digits, shown with a fixed "00": 8 digits.
         if main.DEBUG_HUD
             return                      ; the debug readouts use the HUD row
-        put_bcd2(SCREEN + HUD_SCORE_COL, bcd_hi)
-        put_bcd2(SCREEN + HUD_SCORE_COL + 2, bcd_mid)
-        put_bcd2(SCREEN + HUD_SCORE_COL + 4, bcd_lo)
-        put_bcd2(SCREEN + HUD_SCORE_COL + 6, 0)
+        put_score(SCREEN + HUD_SCORE_COL, bcd_hi, bcd_mid, bcd_lo)
+    }
+
+    sub put_score(uword addr, ubyte bcd_hi, ubyte bcd_mid, ubyte bcd_lo) {
+        ; A score in hundreds (6 BCD digits) as 8 digits.
+        put_bcd2(addr, bcd_hi)
+        put_bcd2(addr + 2, bcd_mid)
+        put_bcd2(addr + 4, bcd_lo)
+        put_bcd2(addr + 6, 0)
+    }
+
+    sub put_hundreds(uword addr, ubyte bcd_mid, ubyte bcd_lo) -> ubyte {
+        ; A value in hundreds (4 BCD digits) without leading zeros, then "00"; just "0" for 0.
+        ; Returns the number of chars written.
+        ubyte n = 0
+        bool lead = true
+        ubyte k
+        for k in 0 to 3 {
+            ubyte d
+            when k {
+                0 -> d = bcd_mid >> 4
+                1 -> d = bcd_mid & 15
+                2 -> d = bcd_lo >> 4
+                else -> d = bcd_lo & 15
+            }
+            if d != 0
+                lead = false
+            if not lead {
+                @(addr + n) = '0' as ubyte + d
+                n++
+            }
+        }
+        @(addr + n) = '0' as ubyte
+        n++
+        if n == 1
+            return n
+        @(addr + n) = '0' as ubyte
+        return n + 1
+    }
+
+    ; ---- messages over the playfield (game flow) ----
+
+    sub row_addr(ubyte row) -> uword {
+        return SCREEN + (row as uword) * 40
+    }
+
+    sub message(ubyte row, ubyte col, str text, ubyte color) {
+        ; Hi-res text (color 0-7) at a char row. draw_playfield() or restore_tiles() erases it.
+        ^^ubyte @zp scr = row_addr(row) + col
+        ubyte i = 0
+        while text[i] != 0 {
+            scr[i] = text[i]
+            i++
+        }
+        sys.memset(scr + COLOR_RAM - SCREEN, i, color)
+    }
+
+    sub restore_tiles(ubyte row, ubyte col, ubyte n) {
+        ; Redraw the tiles under n chars of a message at char row 1-24, starting at col.
+        ubyte trow = (row - 1) >> 1
+        ubyte tcol
+        for tcol in col >> 1 to (col + n - 1) >> 1
+            draw_tile(tcol, trow)
+    }
+
+    sub clear_screen() {
+        sys.memset(SCREEN, 1000, CHAR_SPACE)
+        sys.memset(COLOR_RAM, 1000, COLOR_HUD)
+    }
+
+    sub hide_sprites() {
+        spr_ena = 0
     }
 
     sub hud_time(ubyte bcd) {

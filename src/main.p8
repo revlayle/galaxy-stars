@@ -1,6 +1,5 @@
-; Galaxy Stars, a C64 action game. Phase 4: galaxy 1 with star hits, supernovas, chain reactions,
-; hostile stars (spawn, chase, boost hurl), score with hostile chains, multiplier, lives (count only)
-; and the galaxy timer.
+; Galaxy Stars, a C64 action game. Phase 5: the game flow: title, galaxy start, play, galaxy clear with the
+; time bonus, the next galaxy, losing a life with respawn, game over, pause and the session high score.
 
 %import video
 %import input
@@ -9,6 +8,7 @@
 %import explode
 %import score
 %import hostiles
+%import title
 %zeropage basicsafe
 %memtop $C000
 
@@ -20,41 +20,106 @@ main {
     ; 10 one explosion catching 5 stars (staggered),
     ; 11 hostile spawns in galaxy 1, 12 hostile spawns in galaxy 11 (then a few boosts), 13 contact death,
     ; 14 hurl in the open, 15 hurl into another hostile, 16 hurl explosion next to a star,
-    ; 17 supernova kills 2 hostiles, 18 hurl into a stationary star
+    ; 17 supernova kills 2 hostiles, 18 hurl into a stationary star.
+    ; Game flow (phase 5): 19 full loop (title, galaxy 1 cleared, galaxy 2 lost, game over, title),
+    ; 20 clear bonus and extra life, 21 extra life thresholds (no play, needs DEBUG_HUD), 22 pause,
+    ; 23 death and respawn (DEBUG_HUD), 24 boost hurl while safe (DEBUG_HUD), 25 explosion while safe (DEBUG_HUD)
     const ubyte TEST = 0
+    const bool OLD_TEST = TEST != 0 and TEST < 19   ; tests 1-18 run one galaxy that never ends
+    const bool NO_DEATH = TEST == 11 or TEST == 12  ; spawn and frame time tests: the player can't be hurt
+
+    ; [TUNE] game flow
+    const ubyte START_FRAMES = 100      ; GALAXY nn for 2 s while the stars appear, one per frame
+    const ubyte CLEAR_FRAMES = 150      ; GALAXY CLEAR and the time bonus for 3 s
+    const ubyte MSG_COLOR = 1
+    const ubyte START_ROW = 9           ; GALAXY nn, above the player
+    const ubyte START_COL = 15
+    str galaxy_text = sc:"galaxy 00"
+
+    ; test_stage() arguments
+    const ubyte STAGE_TITLE = 0
+    const ubyte STAGE_PLAY = 1
+    const ubyte STAGE_GAME_OVER = 2
 
     sub start() {
         video.init()
         video.start_frame_irq()
-        stars.seed()
+        if OLD_TEST
+            old_test()
+        if TEST == 21
+            extra_life_test()
+
+        repeat {
+            if TEST == 0 or TEST == 19
+                title.run()             ; seeds the RNG
+            else
+                stars.seed()
+            new_game()
+            repeat {
+                galaxy_start()
+                if not play()
+                    break
+                galaxy_clear()
+            }
+            title.game_over()
+        }
+    }
+
+    sub new_game() {
+        video.clear_screen()
         video.draw_hud()
         score.new_game()
-        if TEST == 12
-            score.galaxy = 11
+        if TEST == 20 {
+            score.points_mid = $01      ; 19,900: the supernova reaches 20,000
+            score.points_lo = $99
+        }
+    }
+
+    sub galaxy_start() {
+        ; GALAXY nn for 2 s while the stars appear in random order; no control, the timer doesn't run.
         explode.clear()
-        if TEST == 0 or TEST == 11 or TEST == 12
+        if TEST == 0 or TEST == 22 or (TEST == 19 and score.galaxy != 1)
             stars.place(stars.for_galaxy(score.galaxy))
         else
             test_layout()
+        stars.hide_for_reveal()
         video.draw_playfield()
         score.start_galaxy()
         hostiles.start_galaxy(score.galaxy)
         player.init()
         player.draw()
-        if TEST != 0 and TEST <= 10
-            hostiles.spawn_timer = $FFFF    ; tests from before the hostiles: none spawn
-        if TEST >= 13
-            test_hostiles()
-        if input.SCRIPTED
-            select_script()
+        ubyte g = score.galaxy
+        if g > 99
+            g = 99
+        galaxy_text[7] = '0' as ubyte + g / 10
+        galaxy_text[8] = '0' as ubyte + g % 10
+        repeat START_FRAMES {
+            video.wait_frame()
+            input.read()
+            stars.reveal_next()
+            video.message(START_ROW, START_COL, galaxy_text, MSG_COLOR)     ; again over a star drawn under it
+        }
+        while stars.revealed < stars.count
+            stars.reveal_next()
+        video.restore_tiles(START_ROW, START_COL, len(galaxy_text))
+    }
 
+    sub play() -> bool {
+        ; PLAYING. True when the galaxy is clear, false when the last life is lost (after its death effect).
+        ; When the last star is destroyed the timer and multiplier stop; play goes on until the explosions and
+        ; hurls are over (the player can still be hurt) and a death effect has ended.
+        test_stage(STAGE_PLAY)
         repeat {
             video.wait_frame()
             input.read()
-            score.update()              ; first: a multiplier raised this frame keeps its full time
+            if input.pressed & input.STOP != 0
+                pause()
+            if stars.left != 0 or OLD_TEST
+                score.update()          ; first: a multiplier raised this frame keeps its full time
             player.update()
             hostiles.update()
-            stars.player_contact()
+            if player.dying == 0
+                stars.player_contact()
             hostiles.check_player()
             explode.check_player()
             hostiles.check_explosions()
@@ -65,15 +130,71 @@ main {
                 score.chain = 0
             player.draw()
             hostiles.draw()
-            if DEBUG_HUD {
-                ; the next frame IRQ came during this frame's work (not counted after a readout redraw,
-                ; which can start the frame late)
-                if video.frame_ready and not dbg_drew
-                    dbg_missed++
-                dbg_prev_drew = dbg_drew
-                dbg_drew = false
-                debug_hud()
-            }
+            if TEST != 0
+                test_frame()
+            if player.gone
+                return false
+            if not OLD_TEST and stars.left == 0 and explode.live == 0 and explode.queued == 0
+                    and hostiles.flying == 0 and player.dying == 0
+                return true
+        }
+    }
+
+    sub pause() {
+        ; Run/Stop again resumes. Everything is frozen meanwhile, the timer too. PAUSED in the free HUD columns.
+        video.message(0, 18, sc:"paused", MSG_COLOR)
+        do {
+            video.wait_frame()
+            input.read()
+        } until input.pressed & input.STOP != 0
+        sys.memset(video.SCREEN + 18, 6, video.CHAR_SPACE)
+        input.pressed = 0               ; the resume press is not a game input
+    }
+
+    sub galaxy_clear() {
+        ; GALAXY CLEAR and the time bonus (added now, then the multiplier is x1) for 3 s; then the next galaxy.
+        score.time_bonus()
+        video.message(10, 14, sc:"galaxy clear", MSG_COLOR)
+        video.message(12, 12, sc:"time bonus", MSG_COLOR)
+        uword a = video.row_addr(12) + 23
+        ubyte n = video.put_hundreds(a, score.bonus_mid, score.bonus_lo)
+        sys.memset(a + video.COLOR_RAM - video.SCREEN, n, MSG_COLOR)
+        repeat CLEAR_FRAMES {
+            video.wait_frame()
+            input.read()
+            if TEST != 0
+                test_frame()
+        }
+        if score.galaxy != 255
+            score.galaxy++
+    }
+
+    sub old_test() {
+        ; Tests 1-18 (phases 2-4): one galaxy set up by the test, never cleared.
+        stars.seed()
+        video.draw_hud()
+        score.new_game()
+        if TEST == 12
+            score.galaxy = 11
+        explode.clear()
+        if TEST == 11 or TEST == 12
+            stars.place(stars.for_galaxy(score.galaxy))
+        else
+            test_layout()
+        video.draw_playfield()
+        score.start_galaxy()
+        hostiles.start_galaxy(score.galaxy)
+        player.init()
+        player.draw()
+        if TEST <= 10
+            hostiles.spawn_timer = $FFFF    ; tests from before the hostiles: none spawn
+        if TEST >= 13
+            test_hostiles()
+        if input.SCRIPTED
+            select_script()
+        void play()
+        repeat {
+            video.wait_frame()
         }
     }
 
@@ -107,7 +228,7 @@ main {
     sub test_layout() {
         stars.clear()
         when TEST {
-            5, 6, 8 -> stars.add(12, 5, 0)
+            5, 6, 8, 19, 20 -> stars.add(12, 5, 0)
             7, 9 -> {
                 ; 0-1 next to each other, 2 diagonal to 1, 3 two tiles from 2 (outside its explosion)
                 stars.add(12, 5, 0)
@@ -124,7 +245,11 @@ main {
                 stars.add(13, 5, 4)
                 stars.add(13, 6, 5)
             }
-            13, 14 -> stars.add(15, 5, 0)
+            13, 14, 23, 24 -> stars.add(15, 5, 0)
+            25 -> {
+                stars.add(12, 5, 0)         ; hit by the player, who is caught in its explosion
+                stars.add(10, 7, 1)         ; its explosion covers the centre while the player is safe
+            }
             15 -> {
                 stars.add(15, 5, 0)
                 stars.add(18, 5, 1)
@@ -176,6 +301,160 @@ main {
             12 -> input.script = &script_gather
             14, 15, 16, 18 -> input.script = &script_hurl
             17 -> input.script = &script_boost_hit
+        }
+    }
+
+    ; ---- game flow self-tests (19-25) ----
+    ubyte[] script_title = [60, 0, 1, 16, 0, 0]
+    ; still until a hostile moves, Run/Stop (32), 100 frames paused, Run/Stop
+    ubyte[] script_pause = [250, 0, 170, 0, 1, 32, 99, 0, 1, 32, 0, 0]
+    ; test 24: after the first respawn, wait, then boost on the spot (still safe when the hostile comes)
+    const ubyte SAFE_BOOST_WAIT = 1
+    ubyte[] script_safe_boost = [SAFE_BOOST_WAIT, 0, 1, 16, 0, 0]
+    const ubyte SAFE_BLAST = 220        ; test 25: frame star 1 explodes, while the player is safe
+
+    ubyte title_visits
+    bool fl_boost_set
+    uword fl_frames                     ; frames since the galaxy's play started
+    ubyte fl_prev_deaths
+    ubyte fl_prev_respawns
+    uword[3] fl_death                   ; frames of the first 3 deaths
+    uword[2] fl_respawn                 ; frames of the first 2 respawns
+    uword fl_star1_gone
+
+    sub set_script(uword s) {
+        input.script = s
+        input.script_pos = 0
+        input.script_left = 0
+    }
+
+    sub test_stage(ubyte stage) {
+        ; Game flow tests: the script for each screen.
+        if not input.SCRIPTED or OLD_TEST
+            return
+        when stage {
+            STAGE_TITLE -> {
+                ; the first title starts a game, the second stays
+                if title_visits == 0
+                    set_script(&script_title)
+                else
+                    set_script(&script_still)
+                title_visits++
+            }
+            STAGE_PLAY -> {
+                fl_frames = 0
+                when TEST {
+                    19 -> {
+                        if score.galaxy == 1
+                            set_script(&script_boost_hit)
+                        else
+                            set_script(&script_still)
+                    }
+                    20 -> set_script(&script_boost_hit)
+                    22 -> set_script(&script_pause)
+                    23, 24 -> {
+                        set_script(&script_still)
+                        test_hostiles()
+                    }
+                    25 -> {
+                        set_script(&script_caught)
+                        hostiles.spawn_timer = $FFFF
+                        stars.start_countdown(1)
+                        stars.timer[1] = SAFE_BLAST
+                    }
+                }
+            }
+            STAGE_GAME_OVER -> set_script(&script_title)
+        }
+    }
+
+    sub test_frame() {
+        ; Called every frame of play (and of the galaxy clear screen) in test builds.
+        if OLD_TEST {
+            if DEBUG_HUD {
+                ; the next frame IRQ came during this frame's work (not counted after a readout redraw,
+                ; which can start the frame late)
+                if video.frame_ready and not dbg_drew
+                    dbg_missed++
+                dbg_prev_drew = dbg_drew
+                dbg_drew = false
+                debug_hud()
+            }
+            return
+        }
+        fl_frames++
+        if player.deaths != fl_prev_deaths {
+            if fl_prev_deaths < len(fl_death)
+                fl_death[fl_prev_deaths] = fl_frames
+            fl_prev_deaths = player.deaths
+        }
+        if player.respawns != fl_prev_respawns {
+            if fl_prev_respawns < len(fl_respawn)
+                fl_respawn[fl_prev_respawns] = fl_frames
+            fl_prev_respawns = player.respawns
+        }
+        if TEST == 24 and player.respawns == 1 and not fl_boost_set {
+            set_script(&script_safe_boost)
+            fl_boost_set = true
+        }
+        if TEST == 25 and fl_star1_gone == 0 and stars.state[1] == stars.GONE
+            fl_star1_gone = fl_frames
+        if DEBUG_HUD and fl_frames & 7 == 0
+            flow_readouts()
+    }
+
+    sub flow_readouts() {
+        ; frames | lives | dying | safe | death 1 | respawn 1 | death 2 | respawn 2 |
+        ; test 25: frame star 1 exploded, else kills and hostiles in use | deaths
+        sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
+        hex_word(0, fl_frames)
+        hex_digit(5, score.lives)
+        hex_byte(7, player.dying)
+        hex_byte(10, player.safe)
+        hex_word(13, fl_death[0])
+        hex_word(18, fl_respawn[0])
+        hex_word(23, fl_death[1])
+        hex_word(28, fl_respawn[1])
+        if TEST == 25
+            hex_word(33, fl_star1_gone)
+        else {
+            hex_digit(33, hostiles.kills)
+            hex_digit(35, hostiles.used)
+        }
+        hex_digit(38, player.deaths)
+    }
+
+    sub extra_life_test() {
+        ; Test 21: extra life thresholds without play. Readouts: lives, next threshold (BCD hundreds) after
+        ; each step; then the score and the no-more-lives flag.
+        video.draw_hud()
+        score.new_game()
+        sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
+        score.add($00, $06)             ; 60,000: lives 3 -> 6, next 80,000
+        hex_digit(0, score.lives)
+        hex_byte(2, score.next_hi)
+        hex_byte(4, score.next_mid)
+        hex_byte(6, score.next_lo)
+        score.mult = 9
+        score.add($00, $10)             ; 9 x 100,000: 960,000, lives 9 (the cap), next 980,000
+        hex_digit(9, score.lives)
+        hex_byte(11, score.next_hi)
+        hex_byte(13, score.next_mid)
+        hex_byte(15, score.next_lo)
+        hex_byte(18, score.points_hi)
+        hex_byte(20, score.points_mid)
+        hex_byte(22, score.points_lo)
+        score.points_hi = $99           ; 99,999,800 + 100: the score stops at its maximum
+        score.points_mid = $99
+        score.points_lo = $98
+        score.mult = 1
+        score.add($01, $00)
+        hex_digit(25, score.lives)
+        hex_byte(27, score.points_hi)
+        hex_byte(29, score.points_mid)
+        hex_byte(31, score.points_lo)
+        hex_digit(34, score.no_more_lives as ubyte)
+        repeat {
         }
     }
 

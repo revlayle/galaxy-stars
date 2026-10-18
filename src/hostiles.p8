@@ -51,7 +51,6 @@ hostiles {
     ubyte[MAX] anim_frame
     ubyte[MAX] anim_timer
     bool[MAX] spin_ccw
-    bool[MAX] hit_player                ; this hostile already took a life (phase 4: no respawn yet)
     ubyte used                          ; slots not FREE
     ubyte flying                        ; HURLED slots
     uword interval                      ; spawn interval in frames
@@ -148,7 +147,6 @@ hostiles {
                 anim_frame[i] = 0
                 anim_timer[i] = 0
                 spin_ccw[i] = false
-                hit_player[i] = false
                 state[i] = CHASE
                 used++
                 return
@@ -345,17 +343,18 @@ _done
     ; ---- hurl (spec section 7) ----
 
     sub check_player() {
-        ; Player box against each chasing hostile: a hurl while boosting, else a lost life.
+        ; Player box against each chasing hostile: a hurl while boosting (also while safe), else a lost life
+        ; unless the player is safe. Nothing while the player is dying.
+        if player.dying != 0
+            return
         ubyte i
         for i in 0 to MAX - 1 {
             if state[i] == CHASE and player.x < x[i] + BOX and x[i] < player.x + player.BOX
                     and player.y < y[i] + BOX and y[i] < player.y + player.BOX {
                 if player.boosted
                     hurl(i)
-                else if not hit_player[i] {
-                    hit_player[i] = true
-                    score.lose_life()
-                }
+                else if player.hurtable()
+                    player.hurt()
             }
         }
     }
