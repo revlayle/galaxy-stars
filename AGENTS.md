@@ -20,6 +20,7 @@ Run `python tools/setup.py` once; it downloads everything into `tools/` and the 
 ## Coding rules
 
 - No floating point (`%import floats` is banned). Prefer `ubyte`/`byte`, `uword` only when values exceed 255. Multiply and divide by shifts or lookup tables in per-frame code. See `docs/spec.md` §1 "Number rules".
+- **prog8c 12.3.4 bug:** an index that adds two array reads, like `tiles[row_start[row[i]] + col[i]]`, compiles wrong (one read is lost). Compute the index into a variable first. Found in phase 3.
 - Never guess a Prog8 library routine: look it up in `tools/prog8-src/compiler/res/prog8lib/` or with `prog8c -libsearch <regex>`.
 - Look up C64 hardware facts in `docs/c64/` (index in `docs/README.md`) instead of relying on memory.
 - Self-test switches (`input.SCRIPTED`, `main.DEBUG_HUD`, ...) must be off in builds handed to the designer.
