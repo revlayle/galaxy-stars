@@ -277,7 +277,7 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 ### Sprites (hi-res 24x21, art up to 21x21)
 | Set | Frames |
 |---|---|
-| Player spin (5-pointed star, 0°-60° in 12° steps) | 6 |
+| Player spin (plain yellow 5-pointed star, no face; 0°-60° in 12° steps) | 6 |
 | Hostile spin (4-pointed star, 0°-75° in 15° steps) | 6 |
 | Player lost-a-life effect | 2-4 |
 | Quasar | 2-4 |
@@ -286,14 +286,17 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 Clockwise spin plays the frames forward, counter-clockwise backward.
 
 ### Chars (2x2 per tile, multicolor)
-- 8 stationary star kinds: "realistic" star icons (bright core, glow, rays) in different colors and shapes. With multicolor chars each tile has 1 own color (0-7) plus the two shared colors, so the 8 kinds are a mix of shapes and own colors **[DECIDE in the art phase]**. Red (2) is kept for the hostile warning flash.
-- Explosion: 3 x 3 tiles = 6 x 6 chars per animation frame, 3 frames.
-- Char budget: 192 free chars (64-255). 8 star kinds (32) + 3 explosion frames (108) + 5 specks + 3 icons = 148, leaving 44 spare.
-- Background specks: 4-6 chars.
+- **Shared char colors** (designer, 2026-10-18): `$D022` = white (1) for hot cores, `$D023` = orange (8) for glows and rays. They apply to every multicolor char: stars, explosion, specks.
+- **8 stationary star kinds**, 8 distinct shapes (not shapes x colors): small dot, 4-ray flare, 8-ray flare, ringed star, binary pair, large giant, diamond pulsar, soft-glow nebula star. White core and orange glow from the shared colors; the kind's own color (0-7) mostly realistic star colors (white, blue, yellow, cyan), purple and green sparingly. Red (2) is kept for the hostile warning flash. None of them may look like the player's 5-pointed outline: the player must stand out from the stationary stars.
+- **Hit feedback:** hits 1 and 2 change the star's own color only (extra shapes for 8 kinds don't fit the char budget).
+- **Countdown "swelling" star:** one shared tile, 2 frames (8 chars), that every kind turns into for its 2 s countdown, flashing faster near the end, then explodes from.
+- **Explosion:** 3 x 3 tiles = 6 x 6 chars per frame, 3 frames: small white flash, full orange burst, fading embers. Own color yellow (7). Where explosions overlap, the brighter frame (flash > burst > embers) wins on shared tiles, so no stray slivers.
+- **Background specks:** 4-6 chars, own color only (no shared-color pixels), so they stay faint under the white/orange shared colors.
+- Char budget: 192 free chars (64-255). 8 star kinds (32) + swelling star (8) + 3 explosion frames (108) + 5 specks + 4 icons = 157, leaving 35 spare.
 - HUD font: ROM screen codes 0-63 copied to chars 0-63 at startup, plus 3 hi-res icon chars (time, multiplier, lives; §2).
 
 ### Pipeline
-Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/tiles.txt`, converted by `tools/gfx.py` into `build/sprites.bin`, `build/chars.bin` and `src/gen_assets.p8` (name constants like `SPR_PLAYER_0`, `TILE_STAR_0_TL`, `CHAR_SPECK_0`). Entries: `sprite` (24 x 21 hi-res, `.` and `1`), `tile <name> color <0-7> [size WxH]` (multicolor, 8 fat pixels x 16 rows per tile; the explosion is one 3x3 entry), `char` (one multicolor char) and `icon` (one hi-res char for the HUD). The format is described at the top of each art file. Claude draws placeholder art first; the designer can redraw any of it in a text editor.
+Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/tiles.txt`, converted by `tools/gfx.py` into `build/sprites.bin`, `build/chars.bin` and `src/gen_assets.p8` (name constants like `SPR_PLAYER_0`, `TILE_STAR_0_TL`, `CHAR_SPECK_0`). Entries: `sprite` (24 x 21 hi-res, `.` and `1`), `tile <name> color <0-7> [size WxH]` (multicolor, 8 fat pixels x 16 rows per tile; the explosion is one 3x3 entry), `char` (one multicolor char) and `icon` (one hi-res char for the HUD). The format is described at the top of each art file. Claude draws all the art (designer, 2026-10-18); everything stays editable text so the designer can redraw any of it in a text editor.
 
 ## 13. Sound
 
@@ -332,6 +335,8 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - Explosion hit area (designer, 2026-10-18): the player and hostile stars are hit by an explosion's round core, not its whole 3 x 3 square; stationary stars still use the square (§6).
 - Bounce trap (designer, 2026-10-18): a star touched during a knockback stops it instead of bouncing again, so the player can't be trapped between two stars (§6).
 - Hurl blasts (designer, 2026-10-18): the player bounces off a hurled hostile; the hostile flies through stationary stars, and through hostiles for its first 8 frames; at a playfield edge it flies off the screen with no explosion. So its explosion no longer catches the player who hurled it (§7).
+
+- Art direction (designer, 2026-10-18): shared colors white + orange, 8 distinct star shapes, a shared swelling star for the countdown, 3-frame explosion (flash, burst, embers; brighter wins on overlap), plain player star with no face, all art by Claude as editable text (§12).
 
 ## 16. Backlog
 

@@ -229,17 +229,18 @@ Done when:
 **Status:** not started
 **Spec:** §12
 
-Build: final sprites and chars, replacing the placeholders listed in earlier notes:
-- 8 stationary star kinds; the shared char colors ($D022/$D023) picked for brighter star glows while the specks still look faint (phase 1 note).
-- Hit feedback (hits 1 and 2) and countdown flash colors (phase 3 note); the red warning flash (phase 4 note: may be tweaked).
-- 3-frame explosion animation (expanding, then fading), including how overlapping explosions draw (phase 3 note: stray slivers).
-- Player and hostile spin frames, the death effect with shrink frames (phase 5 note), the quasar, the boost and invincibility glow colors.
-- HUD icons and background specks if they need it.
+Build: final sprites and chars per spec §12 (art direction decided 2026-10-18), replacing the placeholders listed in earlier notes:
+- Shared char colors white + orange; specks redrawn in their own color only.
+- 8 stationary star kinds as 8 distinct shapes, none like the player's 5-pointed outline.
+- Hit feedback colors (hits 1 and 2), the shared 2-frame swelling star for the countdown, the red warning flash (phase 4 note: may be tweaked).
+- 3-frame explosion (flash, burst, embers); on overlap the brighter frame wins (fixes the phase 3 slivers).
+- Player (plain yellow star, no face) and hostile spin frames, the death effect with shrink frames (phase 5 note), the quasar, the boost and invincibility glow colors.
+- HUD icons if they need it.
 
 Frame time is the main risk: at galaxy 21, test 12 already drops 1 frame in 1 of 16 seeds (phase 6 notes). Measure with the CIA-timer profiler (`src/prof.p8`) before and after, on the same 16 seeds. Animation steps can be spread over frames (e.g. one explosion's step per frame) as long as no explosion visibly lags.
 
 Done when:
-- [ ] Screenshots of: all 8 star kinds, a star at hits 1 and 2, a countdown, a red warning, each explosion frame, two overlapping explosions, the player normal/boosting/invincible, a hostile, the quasar, the death effect.
+- [ ] Screenshots of: all 8 star kinds, a star at hits 1 and 2, the swelling countdown star, a red warning, each explosion frame, two overlapping explosions, the player normal/boosting/invincible, a hostile, the quasar, the death effect.
 - [ ] Test 12 at galaxy 21 on the 16 seeds: no more dropped frames than before this phase; dropped-frame count and slowest frame reported.
 - [ ] The phase 3-6 regression tests give the same numbers.
 - [ ] Char budget: chars used reported (spec §12).
