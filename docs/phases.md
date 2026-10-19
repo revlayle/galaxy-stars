@@ -264,12 +264,35 @@ Done when:
 - New self-test 36 (art showcase, no DEBUG_HUD, play frame in HUD columns 18-21): the 8 kinds plain, at 1 and 2 hits, two countdown stars in opposite swell frames, a warning, a still hostile, the quasar, explosions started at frames 35, 40/50 (overlapping pair), 48 and 58, a boost at 70, invincibility at 90 and a death at 110. Screenshots at frames 63 (everything but the red), 67 (red warning), 71 (pair after the older one ended), 79 (boost glow), 95 (invincible glow), 115-160 (death flash and shrink). VICE's start time varies by a few frames between runs; the frame counter tells which frame a shot shows.
 
 ## Phase 8: Sound
-**Status:** not started
+**Status:** done
 **Spec:** §13
 
 Build: SID effects, table-driven, one voice, stepped by the frame IRQ (adapt `src/sound.p8` from Smashy Smashy): boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear.
 
 Done when:
-- [ ] Every effect is triggered in a scripted run (an effect counter on the debug HUD).
-- [ ] Frame time unchanged (test 12, same 16 seeds).
-- [ ] Report lists which effects cut each other off, for the designer to judge by ear.
+- [x] Every effect is triggered in a scripted run (an effect counter on the debug HUD).
+- [x] Frame time unchanged (test 12, same 16 seeds).
+- [x] Report lists which effects cut each other off, for the designer to judge by ear.
+
+**Notes:**
+- New module `src/sound.p8`, adapted from Smashy Smashy: SID voice 1, one effect at a time, a table per parameter (wave, AD, SR, start pitch, pitch slide per frame, gate length). `sound.play()` leaves a request; `video.frame_irq` calls `sound.step()` after the sprite copy. `sound.init()` at startup (pulse width 50%, volume 15, no filter). Program ends at `$4B27`.
+- Effects and triggers (sounds are placeholders to tune by ear, `[TUNE]` tables in `sound.p8`):
+  - boost: rising saw, 12 frames (`player.update`, boost start).
+  - star hit: short falling triangle blip, 3 frames (`stars.touch`, every touch that counts, also one that stops a knockback or touches a star in its countdown).
+  - supernova: falling noise, 20 frames, long release (`stars.supernova`; also a hurled hostile's explosion, `hostiles.blast`).
+  - hostile warning: pulse beep, 8 frames (`stars.start_warning`).
+  - hurl: falling saw zap, 10 frames (`hostiles.hurl`; also a hostile destroyed by the invincible player).
+  - life lost: slow falling triangle, 50 frames, the length of the death effect (`player.hurt`).
+  - extra life: rising pulse, 25 frames (`score.check_extra`, when a life is given).
+  - quasar pickup: rising triangle, 30 frames (`quasar.update`).
+  - galaxy clear: slow rising pulse, 60 frames (`main.galaxy_clear`).
+- Not listed in the spec, my choice: the hurled hostile's explosion uses the supernova sound, and the invincible kill uses the hurl sound.
+- **Cut-offs** (for the designer to judge by ear). A new effect cuts off the one playing. Only one request fits in a frame: of two effects in the same frame only the later one in the frame order plays, the other is never heard. Frame order of the triggers: boost, warning, hurl explosion, star hit, hurl and hostile contact (life lost), explosion vs player (life lost), explosion kills (extra life), supernova then extra life, quasar pickup.
+  - Supernova chains: a supernova every 6 frames (the stagger) restarts the 20-frame noise each time, so a chain is one long rumble. Supernovas and warnings (every 1 s at galaxy 21) cut off anything longer: life lost (50 frames), quasar (30), extra life (25), boost (12).
+  - Boost pressed while touching a star: only the hit is heard. A boost into a hostile: the hurl cuts the boost sound.
+  - Pushing into a star plays a hit every 10 frames (the lockout).
+  - Extra life: found while testing that a supernova's own points reaching the threshold made the supernova request overwrite the extra-life request, so that extra life was never heard. Fixed: the supernova sound is requested before the points, so the extra life plays. Hurls and invincible kills already requested their sound before the points. **At a galaxy clear the clear sound is requested after the time bonus, so an extra life from the bonus is not heard** (the HUD shows it).
+  - Galaxy clear: nothing else plays during the clear screen, so it is never cut off.
+- Designer played the build (2026-10-18): approved ("distinct, nice, basic"); richer effects later as an addendum (spec §16 backlog).
+- Self-test 37 (flow, DEBUG_HUD; quasar forced): start at 49,900; boosted hit on star (12,5) and keep pushing (boost, hits); its supernova reaches 50,000 (extra life) and catches the player at frame 159 (life lost); respawn at 209, the player walks into the quasar (quasar pickup); a warning at frame 240 on star (19,8) (warning); its hostile meets the invincible player and is destroyed (hurl); last star gone (galaxy clear), galaxy 2 starts. Counters at the clear: boost 1, hit 9, supernova 1, warning 1, hurl 1, life lost 1, extra life 1, quasar 1, clear 1. Readouts in row 0 (frame, galaxy, lives, the 9 counters, stars left) and row 24 (first death and respawn frame, player box). `sound.played` counts only in test builds (`main.TEST != 0`).
+- **Frame time** (test 12, galaxy 21, the same 16 seeds as phase 7; before = the phase 7 code): dropped frames identical, 1 frame in seed 909 and 1 in seed 1212, 0 in the other 14. The worst frame of each run (the same game frame in all 14 seeds with both readouts) costs 63-314 cycles more (1-5 raster lines): the IRQ's `sound.step()` (about 80 cycles, counted when a frame's work runs past the next IRQ) and the `play()` calls. Slowest: 22,112 cycles with the profiler's own overhead (seed 909, was 21,832).

@@ -149,6 +149,7 @@ score {
             if lives < MAX_LIVES {
                 lives++
                 video.hud_lives(lives)
+                sound.play(sound.EXTRA_LIFE)
             }
             if raise_next() != 0
                 no_more_lives = true

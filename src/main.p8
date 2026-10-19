@@ -11,6 +11,7 @@
 %import title
 %import prof
 %import quasar
+%import sound
 %zeropage basicsafe
 %memtop $C000
 
@@ -35,6 +36,7 @@ main {
     ; Quasar (phase 6, quasar.ALWAYS is on for these; DEBUG_HUD): 33 quasar appears and burns out,
     ; 34 pickup and invincibility (speed, stars, hostile, explosion, fire, glow), 35 one quasar per galaxy (2 galaxies)
     ; Art (phase 7): 36 showcase for screenshots (no DEBUG_HUD; play frame number in HUD columns 18-21)
+    ; Sound (phase 8): 37 every effect in one flow run (DEBUG_HUD: a counter per effect)
     const ubyte TEST = 0
     const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or (TEST >= 33 and TEST <= 36))  ; one galaxy, never ends
     const bool NO_DEATH = TEST == 11 or TEST == 12 or TEST == 36  ; the player can't be hurt
@@ -54,6 +56,7 @@ main {
 
     sub start() {
         video.init()
+        sound.init()
         score.init()
         video.start_frame_irq()
         if OLD_TEST
@@ -83,7 +86,7 @@ main {
         video.clear_screen()
         video.draw_hud()
         score.new_game()
-        if TEST == 20 {
+        if TEST == 20 or TEST == 37 {
             score.points_mid = $04      ; 49,900: the supernova reaches 50,000
             score.points_lo = $99
         }
@@ -102,6 +105,8 @@ main {
         hostiles.start_galaxy(score.galaxy)
         quasar.start_galaxy()
         player.init()
+        if TEST == 37 and score.galaxy == 1
+            player.y = 82                   ; lined up with the star's box: straight bounce, pushed into it
         player.draw()
         ubyte g = score.galaxy
         if g > 99
@@ -199,6 +204,7 @@ main {
     sub galaxy_clear() {
         ; GALAXY CLEAR and the time bonus (added now, then the multiplier is x1) for 3 s; then the next galaxy.
         score.time_bonus()
+        sound.play(sound.CLEAR)
         quasar.start_galaxy()           ; a quasar still shown (or about to appear) goes
         player.invincible = 0           ; and invincibility ends
         player.inv_secs = 0
@@ -327,6 +333,10 @@ main {
         stars.clear()
         when TEST {
             5, 6, 8, 19, 20, 33 -> stars.add(12, 5, 0)
+            37 -> {
+                stars.add(12, 5, 0)         ; hit and pushed into: catches the player, leaves the quasar
+                stars.add(19, 8, 1)         ; warning at frame 240; its hostile meets the invincible player
+            }
             34 -> {
                 stars.add(12, 5, 0)         ; hit by the player: leaves the quasar
                 stars.add(15, 5, 1)         ; in the path after the pickup
@@ -503,6 +513,7 @@ main {
                             set_script(&script_still)
                     }
                     20, 35 -> set_script(&script_boost_hit)
+                    37 -> set_script(&script_caught_close)
                     22 -> set_script(&script_pause)
                     23, 24 -> {
                         set_script(&script_still)
@@ -582,6 +593,8 @@ main {
             set_script(&script_safe_boost)
             fl_boost_set = true
         }
+        if TEST == 37 and score.galaxy == 1 and fl_frames == 240
+            stars.start_warning(1)
         if TEST == 35 and quasar.shows != fl_q_shows {
             if fl_q_shows < len(fl_q_frame)
                 fl_q_frame[fl_q_shows] = fl_frames
@@ -619,6 +632,24 @@ main {
         ; frames | lives | dying | safe | death 1 | respawn 1 | death 2 | respawn 2 |
         ; test 25: frame star 1 exploded, else kills and hostiles in use | deaths
         sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
+        if TEST == 37 {
+            ; frames | galaxy | lives | times played: boost, hit, supernova, warning, hurl, life lost, extra life,
+            ; quasar, clear | stars left | quasar pickups
+            hex_word(0, fl_frames)
+            hex_byte(5, score.galaxy)
+            hex_digit(8, score.lives)
+            ubyte e
+            for e in 0 to sound.EFFECTS - 1
+                hex_byte(10 + e * 3, sound.played[e])
+            hex_digit(38, stars.left)
+            ; row 24: death 1 | respawn 1 | player box x, y
+            uword r = 24 * 40
+            hex_word(r, fl_death[0])
+            hex_word(r + 5, fl_respawn[0])
+            hex_word(r + 10, player.x)
+            hex_byte(r + 15, player.y)
+            return
+        }
         if TEST == 35 {
             ; frames | galaxy | quasars shown in total | appeared this galaxy | frames shown (in this galaxy's
             ; frame count) of the first two | supernovas (stars gone) this galaxy

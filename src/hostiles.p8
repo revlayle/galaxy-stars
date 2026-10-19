@@ -420,6 +420,7 @@ _done
                     and player.y < y[i] + BOX and y[i] < player.y + player.BOX {
                 if player.invincible != 0 {
                     free(i)
+                    sound.play(sound.HURL)
                     destroyed()
                 } else if player.boosted
                     hurl(i)
@@ -471,6 +472,7 @@ _done
         hurl_x = x[i]
         ; the player bounces straight back, opposite the hurl, as off a stationary star
         player.bounce(-hurl_vx[i], -hurl_vy[i])
+        sound.play(sound.HURL)
         destroyed()
     }
 
@@ -530,6 +532,7 @@ _done
         free(i)
         flying--
         blasts++
+        sound.play(sound.SUPERNOVA)     ; the same explosion sound
         blast_x = x[i]
         explode.start(lsb((x[i] + 6) >> 4), (y[i] + 6) >> 4)
     }

@@ -126,6 +126,7 @@ player {
     sub hurt() {
         ; Touched by a hostile or caught in an explosion: a life lost, the death effect starts.
         score.lose_life()
+        sound.play(sound.LIFE_LOST)
         deaths++
         dying = DIE_FRAMES
         boost_left = 0
@@ -175,6 +176,7 @@ player {
             if input.pressed & input.FIRE != 0 and boost_left == 0 and cooldown == 0 and invincible == 0 {
                 boost_left = BOOST_FRAMES
                 boosts++
+                sound.play(sound.BOOST)
             }
 
             ubyte dir = input.held & %1111

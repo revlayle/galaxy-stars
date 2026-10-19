@@ -397,6 +397,7 @@ _bcd        .byte ?, ?, ?
         c64.SPENA = spr_ena
         frame_ready = true
         frames++
+        sound.step()
         return false                    ; no KERNAL IRQ: the game reads the keyboard matrix itself
     }
 

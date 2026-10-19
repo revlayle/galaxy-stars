@@ -306,6 +306,11 @@ Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/til
 
 Basic SID effects only, no music, built in phase 8: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
 
+- Voice 1 only. A new effect cuts off the one playing; of two effects requested in the same frame only the later one plays.
+- A hurled hostile's explosion uses the supernova sound; a hostile destroyed by the invincible player uses the hurl sound (phase 8).
+- When a supernova's points give an extra life, the extra-life sound plays (the supernova sound is requested first). An extra life from the galaxy clear bonus is not heard over the clear sound.
+- The effect tables (wave, envelope, pitch, slide, length) are in `src/sound.p8` **[TUNE]**.
+
 ## 14. Source layout
 
 ```
@@ -347,3 +352,4 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - Score popups at the scoring spot (as in Smashy Smashy).
 - Twinkling background specks.
 - Saved high-score list.
+- Richer sound effects (designer, 2026-10-18, after phase 8: "we can expand upon them in an addendum").

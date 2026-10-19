@@ -9,7 +9,7 @@
 
 quasar {
     const bool FORCE = false           ; debug: every supernova leaves one (still once per galaxy). Keep false.
-    const bool ALWAYS = FORCE or (main.TEST >= 33 and main.TEST <= 36)
+    const bool ALWAYS = FORCE or (main.TEST >= 33 and main.TEST <= 37)
     const ubyte CHANCE = 100            ; [TUNE] 1 in 100 per supernova
     const ubyte LIFE_FRAMES = 250       ; 5 s
     const ubyte BLINK_FRAMES = 50       ; [TUNE] blinks in the last second
@@ -79,6 +79,7 @@ quasar {
                 and player.y < y + BOX and y < player.y + player.BOX {
             life = 0
             pickups++
+            sound.play(sound.QUASAR)
             video.hide_sprite(SPRITE)
             player.make_invincible()
         }

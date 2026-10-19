@@ -227,6 +227,7 @@ stars {
             stops++
             if no_hit[i] == 0 {
                 no_hit[i] = NO_HIT_FRAMES
+                sound.play(sound.HIT)
                 if state[i] != COUNTDOWN {
                     if player.boosted
                         hit(i, BOOST_HITS)
@@ -239,6 +240,7 @@ stars {
         if no_hit[i] != 0
             return
         no_hit[i] = NO_HIT_FRAMES
+        sound.play(sound.HIT)
         if state[i] != COUNTDOWN {
             if player.boosted
                 hit(i, BOOST_HITS)
@@ -420,6 +422,7 @@ _found
         timer[i] = WARNING_FRAMES
         warnings++
         set_color(i, WARNING_COLOR)
+        sound.play(sound.WARNING)
     }
 
     sub warning(ubyte i) {
@@ -509,6 +512,7 @@ _done
         ubyte idx = video.row_start[row[i]]
         idx += col[i]
         video.tiles[idx] = 0
+        sound.play(sound.SUPERNOVA)     ; first: an extra life reached by its points replaces it (one request a frame)
         score.supernova()
         explode.start(col[i], row[i])   ; draws over the tile; it is restored as empty space afterwards
         quasar.chance(col[i], row[i])
