@@ -205,7 +205,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 
 - Supernova event: the 100 is multiplied by the multiplier *before* the +1.
 - Galaxy clear bonus: multiplied by the multiplier like every other event; the multiplier resets to x1 after it is added.
-- **Chain:** one shared chain counter for every hostile kill: supernova kills, boost hurls, kills by a hurled star's explosion and invincibility kills all add to it, and each kill scores the next doubling step. The chain stays alive while any of these is going on: an explosion is active, a star is in a countdown that was started by an explosion, a hurled hostile is still flying, or the player is invincible. When none of them is, the chain resets, so the next kill scores 500 again. **[TUNE]**
+- **Chain:** one shared chain counter for every hostile kill: supernova kills, boost hurls, kills by a hurled star's explosion and invincibility kills all add to it, and each kill scores the next doubling step. The chain stays alive while any of these is going on: an explosion is active, a hurled hostile is still flying, or the player is invincible. When none of them is, the chain resets, so the next kill scores 500 again. Designer, 2026-10-19: a star counting down after being caught by an explosion no longer keeps it alive (it did, and from galaxy 21 on chain reactions kept one chain going almost all the time; see §15 Resolved). **[TUNE]**
 - Chain cap: the doubling stops at the 6th kill (16,000), the most hostiles at once; further kills in the chain score 16,000 each **[TUNE]**. Designer, 2026-10-18: was the 8th kill (64,000), which made one chain worth 127,500 x multiplier and scores of 600,000+.
 
 ### Multiplier
@@ -222,7 +222,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 
 ### Lives
 - 3 at the start, max 9 (the HUD shows one digit).
-- Extra life every 50,000 points (at 50,000, 100,000, ...; designer, 2026-10-18: was 20,000), constant `score.EXTRA_LIFE_EVERY` (in hundreds) **[TUNE]**. Past 9 lives, no extra life is given, but the next threshold still moves on.
+- Extra lives at 100,000 points, then every 300,000 (400,000, 700,000, ...; designer, 2026-10-19: was every 50,000, before that 20,000), constants `score.EXTRA_LIFE_FIRST` and `score.EXTRA_LIFE_EVERY` (in hundreds) **[TUNE]**. Past 9 lives, no extra life is given, but the next threshold still moves on.
 - A life is lost when the player is touched by a hostile star while not boosting, or is caught in an explosion. Invincibility protects from both.
 - **Losing a life** (designer approved):
   - The player sprite flashes/shrinks for 1 s while everything else keeps running (explosions, countdowns, hostiles), then reappears in the centre.
@@ -273,7 +273,7 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
   - The player star spins under the logo (between it and PRESS FIRE), "PRESS FIRE" blinks (row 19), "HIGH SCORE" with the session high score (row 22), faint background specks.
 - **HOW TO PLAY** and **SCORING** (`pages.p8`): the game's multicolor mode with real tiles and sprites (spinning), text in hi-res cells; graphics centred on pixel column 32, text from column 9. All text is in tables in `pages.p8`.
   - HOW TO PLAY: player star "MOVE WITH THE STICK / FIRE TO BOOST"; a star "RAM STARS TO MAKE THEM GO / SUPERNOVA: 3 BUMPS OR 1 BOOST"; the swelling star and the explosion's burst frame "HIT STARS SWELL, THEN EXPLODE / GET CLEAR BEFORE THEY BLOW"; a hostile "HURL HOSTILES WITH A BOOST / DON'T LET THEM TOUCH YOU"; the quasar "GRAB A QUASAR FOR 8 SECONDS / OF INVINCIBILITY"; at the bottom "CLEAR ALL STARS TO REACH THE NEXT GALAXY".
-  - SCORING: a star "SUPERNOVA 100 / AND MULTIPLIER +1"; a hostile "HOSTILE CHAIN / 500 1000 2000 4000 8000 16000"; time icon "TIME BONUS 100 PER SECOND"; multiplier icon "ALL POINTS X MULTIPLIER"; lives icon "EXTRA LIFE EVERY 50000". The supernova, chain and extra-life values are read from `score.p8`, so they follow tuning; the "100 per second" is text.
+  - SCORING: a star "SUPERNOVA 100 / AND MULTIPLIER +1"; a hostile "HOSTILE CHAIN / 500 1000 2000 4000 8000 16000"; time icon "TIME BONUS 100 PER SECOND"; multiplier icon "ALL POINTS X MULTIPLIER"; lives icon "EXTRA LIFE AT 100000 / THEN EVERY 300000". The supernova, chain and extra-life values are read from `score.p8`, so they follow tuning; the "100 per second" is text.
 - **DEMO** (`demo.p8`, designer, 2026-10-18): a game played by a pilot routine in a random galaxy 3-5 **[TUNE]**, "DEMO" on the HUD (columns 16-19, before the invincibility field). It starts with GALAXY nn as usual and ends after 30 s of play (`demo.PLAY_FRAMES`) **[TUNE]**, when the pilot loses a life (after the death effect) or after GALAXY CLEAR when it clears the galaxy; then TITLE. Fire starts a game at any point of it (GALAXY nn, play, GALAXY CLEAR). It never touches the high score (only GAME_OVER updates it). Pause doesn't work in the demo.
   - The pilot writes joystick bits in place of the stick (`input.pilot`; the real stick then only counts for the fire that ends the demo). Each frame, in this order: away from countdown stars (44 px), explosions (40 px) and stars turning hostile (32 px) within 3 tiles, their pushes added up (along a playfield edge when one is in the way), with a boost when a threat is 16 px or more inside its distance; a boost into a chasing hostile closer than 44 px (steering at it while the boost runs); away from a hostile closer than 52 px when it can't boost; else to the nearest IDLE star with no countdown, warning or explosion on or next to its tile, and a boost into it from 72 px **[TUNE]** (distances between centres, longer axis plus half the shorter).
   - Smooth movement (designer, 2026-10-18: the per-frame decisions looked jerky): walking to a star, a new stick direction is held at least 8 frames (`demo.HOLD_FRAMES`) **[TUNE]**, and so is the last flee direction after the threats are out of range. Fleeing, going for a hostile and aiming a boost react at once.
@@ -348,7 +348,7 @@ tools/gfx.py       text art -> binaries + gen_assets.p8
 
 ## 15. Open questions
 
-None at the moment (star art kinds are decided in the art phase, §12).
+None at the moment.
 
 ### Resolved
 - HUD (designer, 2026-10-17): no galaxy number on the HUD, it's shown at galaxy start. Time, multiplier and lives each use a one-char icon (clock/hourglass, small centred x, yellow star) followed by the digits.
@@ -361,6 +361,15 @@ None at the moment (star art kinds are decided in the art phase, §12).
 - Bounce trap (designer, 2026-10-18): a star touched during a knockback stops it instead of bouncing again, so the player can't be trapped between two stars (§6).
 - Hurl blasts (designer, 2026-10-18): the player bounces off a hurled hostile; the hostile flies through stationary stars, and through hostiles for its first 8 frames; at a playfield edge it flies off the screen with no explosion. So its explosion no longer catches the player who hurled it (§7).
 
+- **Late-game scoring** (designer, 2026-10-18: galaxy 39 with 20 million points and lives to spare). From galaxy 21 the hostile chain almost never resets (chain reactions keep an explosion or a blast countdown going), so every kill past the 6th scores 16,000 x multiplier, up to 144,000 at x9, almost three extra lives at 50,000 each. Options: chain kills without the multiplier; the chain alive only during explosions and hurls (not blast countdowns); a lower cap (e.g. 4,000); extra lives further apart as the score grows (e.g. every 50,000 up to 500,000, then every 250,000). Proposal: chain kills without the multiplier, plus the wider extra-life steps.
+  - Measured (test 40 with `main.DEMO_GALAXY` = 25: the pilot, unhurtable, 6 seeds x 8 galaxies, all cleared in about 23 s, 19 hostile kills per galaxy; every rule scored on the same games). Points per galaxy, chain share, average / longest chain:
+    - now: 1,499,000, 96%, 5.4 / 21
+    - without blast countdowns keeping the chain: 248,000, 76%, 2.0 / 7
+    - kill window 1 s: 235,000, 75%, 2.0 / 7
+    - kill window 2 s: 1,082,000, 95%, 5.3 / 22
+    - kill window 2.5 s: 1,815,000, 97%, 11.7 / 26
+  - Kills come about every 1.2 s at galaxy 25, so a window of 2 s or more almost never ends a chain. Without the multiplier on chain kills (option 1, not measured) these chain points would shrink further.
+  - **Decided** (designer, 2026-10-19): the chain no longer stays alive during blast countdowns (§8), and extra lives come at 100,000, then every 300,000 (§8). The multiplier still applies to chain kills. Check after the change (seed 101, same 8 galaxies): the game now scores what the measurement above gave for that rule.
 - Art direction (designer, 2026-10-18): shared colors white + orange, 8 distinct star shapes, a shared swelling star for the countdown, 3-frame explosion (flash, burst, embers; brighter wins on overlap), plain player star with no face, all art by Claude as editable text (§12).
 
 ## 16. Backlog

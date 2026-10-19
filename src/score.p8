@@ -8,7 +8,10 @@
 score {
     const ubyte START_LIVES = 3
     const ubyte MAX_LIVES = 9
-    const uword EXTRA_LIFE_EVERY = $0500    ; [TUNE] BCD hundreds: an extra life every 50,000 points
+    ; [TUNE] BCD hundreds: the first extra life at 100,000 points, then every 300,000 (designer, 2026-10-19: was
+    ; every 50,000)
+    const uword EXTRA_LIFE_FIRST = $1000
+    const uword EXTRA_LIFE_EVERY = $3000
     const ubyte MAX_MULT = 9
     const ubyte GALAXY_TIME = $60       ; BCD seconds
     const ubyte FRAMES_PER_SECOND = 50
@@ -78,8 +81,8 @@ score {
         lives = START_LIVES
         galaxy = 1
         next_hi = 0
-        next_mid = msb(EXTRA_LIFE_EVERY)
-        next_lo = lsb(EXTRA_LIFE_EVERY)
+        next_mid = msb(EXTRA_LIFE_FIRST)
+        next_lo = lsb(EXTRA_LIFE_FIRST)
         no_more_lives = false
         video.hud_score(0, 0, 0)
         video.hud_mult(mult)
@@ -95,6 +98,8 @@ score {
 
     sub chain_kill() {
         ; A hostile destroyed: the next chain step times the multiplier.
+        if main.TEST == 40
+            main.cp_kill()
         ubyte step = chain
         if step >= CHAIN_STEPS
             step = CHAIN_STEPS - 1

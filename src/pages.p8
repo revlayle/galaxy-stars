@@ -42,8 +42,8 @@ pages {
     const ubyte HOW_QUASAR_Y = 19 * 8 - 10
 
     ; ---- SCORING ----
-    ubyte[] score_row = [1, 4, 5, 8, 12, 15, 18]
-    ubyte[] score_col = [16, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL]
+    ubyte[] score_row = [1, 4, 5, 8, 12, 15, 18, 19]
+    ubyte[] score_col = [16, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL, TEXT_COL]
     uword[] score_text = [
         sc:"scoring",
         sc:"supernova",
@@ -51,7 +51,8 @@ pages {
         sc:"hostile chain",
         sc:"time bonus 100 per second",
         sc:"all points x multiplier",
-        sc:"extra life every"
+        sc:"extra life at",
+        sc:"then every"
     ]
     const ubyte SCORE_HOSTILE_Y = 8 * 8 - 10
     const ubyte ICON_COL = 4
@@ -96,7 +97,8 @@ pages {
         put_char(12, ICON_COL, assets.CHAR_TIME, assets.CHAR_TIME_COLOR)
         put_char(15, ICON_COL, assets.CHAR_MULT, assets.CHAR_MULT_COLOR)
         put_char(18, ICON_COL, assets.CHAR_LIVES, assets.CHAR_LIVES_COLOR)
-        put_value(18, TEXT_COL + 17, msb(score.EXTRA_LIFE_EVERY), lsb(score.EXTRA_LIFE_EVERY))
+        put_value(18, TEXT_COL + 14, msb(score.EXTRA_LIFE_FIRST), lsb(score.EXTRA_LIFE_FIRST))
+        put_value(19, TEXT_COL + 11, msb(score.EXTRA_LIFE_EVERY), lsb(score.EXTRA_LIFE_EVERY))
         video.set_sprite(1, assets.SPR_HOSTILE_0, hostiles.COLOR, SPR_X, SCORE_HOSTILE_Y)
         return wait(SCORING_FRAMES)
     }

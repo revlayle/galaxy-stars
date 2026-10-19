@@ -51,11 +51,9 @@ stars {
     ubyte[MAX] no_hit                   ; frames before this star can count a hit again
     ubyte[MAX] shown                    ; color RAM value it is drawn with (MC bit included)
     ubyte[MAX] shown_char               ; top-left char it is drawn with (its kind, or the swelling star)
-    bool[MAX] from_blast                ; COUNTDOWN started by an explosion (keeps the hostile chain alive)
     ubyte count
     ubyte left                          ; stars not destroyed yet: stationary stars plus active hostiles
     ubyte warnings                      ; stars in WARNING
-    ubyte blast_countdowns              ; stars in a COUNTDOWN started by an explosion, counted by update()
     bool novas_due                      ; a countdown reached 0: update() makes it go supernova next frame
     ubyte[MAX] @shared pick_far         ; pick_hostile() candidates, filled by scan_idle()
     ubyte[MAX] @shared pick_any
@@ -122,7 +120,6 @@ stars {
         count = 0
         left = 0
         warnings = 0
-        blast_countdowns = 0
         novas_due = false
     }
 
@@ -277,7 +274,6 @@ stars {
             return false
         start_countdown(i)
         timer[i] += extra
-        from_blast[i] = true
         return true
     }
 
@@ -286,7 +282,6 @@ stars {
         if state[i] == WARNING
             warnings--
         state[i] = COUNTDOWN
-        from_blast[i] = false
         hits[i] = HITS_TO_NOVA
         timer[i] = COUNTDOWN_FRAMES
         set_look(i, SWELL_BIG, SWELL_BIG_COLOR)
@@ -354,7 +349,6 @@ stars {
             }
         }
         i = 0
-        blast_countdowns = 0
         repeat {
             i = next_busy(i)
             if i == 255
@@ -362,8 +356,6 @@ stars {
             if state[i] == WARNING
                 warning(i)
             else {
-                if from_blast[i]
-                    blast_countdowns++
                 ubyte t = timer[i]
                 if t != 0 {
                     t--

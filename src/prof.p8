@@ -13,7 +13,7 @@ prof {
     uword worst_total
     uword worst_frame
     ubyte worst_live                    ; explosions running in the worst frame
-    ubyte worst_busy                    ; stars in a countdown started by an explosion
+    ubyte worst_busy                    ; stars turning hostile
     ubyte worst_used                    ; hostile slots in use
     uword frames
     uword sub_start
@@ -81,7 +81,7 @@ prof {
             for k in 0 to PARTS - 1
                 worst_part[k] = cur[k]
             worst_live = explode.live
-            worst_busy = stars.blast_countdowns
+            worst_busy = stars.warnings
             worst_used = hostiles.used
             dirty = true
         }
@@ -92,7 +92,7 @@ prof {
     }
 
     sub show() {
-        ; row 21: worst frame parts 0-7 | row 22: parts 8-9, total, frame, live, blast countdowns, hostiles |
+        ; row 21: worst frame parts 0-7 | row 22: parts 8-9, total, frame, live, warnings, hostiles |
         ; row 23: maxima of parts 0-7 | row 24: maxima of parts 8-9, then explode.start, restore, score.add, step
         sys.memset(video.row_addr(21), 160, video.CHAR_SPACE)
         sys.memset(video.row_addr(21) + video.COLOR_RAM - video.SCREEN, 160, 1)

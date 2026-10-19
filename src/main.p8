@@ -48,7 +48,7 @@ main {
     const ubyte TEST = 0
     const ubyte ATTRACT_FIRE = 0
     const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or (TEST >= 33 and TEST <= 36))  ; one galaxy, never ends
-    const bool NO_DEATH = TEST == 11 or TEST == 12 or TEST == 36  ; the player can't be hurt
+    const bool NO_DEATH = TEST == 11 or TEST == 12 or TEST == 36 or (TEST == 40 and DEMO_GALAXY != 0)  ; the player can't be hurt
 
     ; [TUNE] game flow
     const ubyte START_FRAMES = 100      ; GALAXY nn for 2 s while the stars appear, one per frame
@@ -118,7 +118,7 @@ main {
         video.draw_hud()
         score.new_game()
         if TEST == 20 or TEST == 37 {
-            score.points_mid = $04      ; 49,900: the supernova reaches 50,000
+            score.points_mid = $09      ; 99,900: the supernova reaches 100,000
             score.points_lo = $99
         }
     }
@@ -202,9 +202,12 @@ main {
             quasar.update()
             if PROFILE
                 prof.mark(8)
-            ; the hostile chain lives while an explosion, a countdown it started, a hurl or invincibility is going on
-            if explode.live == 0 and hostiles.flying == 0 and stars.blast_countdowns == 0 and player.invincible == 0
+            ; the hostile chain lives while an explosion, a hurl or invincibility is going on (designer, 2026-10-19:
+            ; no longer while a countdown started by an explosion is running)
+            if explode.live == 0 and hostiles.flying == 0 and player.invincible == 0
                 score.chain = 0
+            if TEST == 40
+                cp_frame()
             player.draw()
             hostiles.draw()
             quasar.draw()
@@ -772,6 +775,66 @@ main {
 
     const ubyte DEMO_RUNS = 16
     const uword DEMO_SEED = 0           ; test 40: 0 = seed from the startup timing
+    ; test 40 chain-rule comparison: DEMO_GALAXY != 0 plays that galaxy for DEMO_FRAMES with the player unhurtable
+    ; and scores the hostile kills under each chain rule (cp_*); table on rows 19-23
+    const ubyte DEMO_GALAXY = 0
+    const uword DEMO_FRAMES = 3000
+    ; rules: 0 current, 1-3 kill windows of cp_window frames
+    const ubyte CP_RULES = 4
+    uword[CP_RULES] cp_window = [0, 50, 100, 125]
+    ubyte[CP_RULES] cp_chain
+    uword[CP_RULES] cp_timer
+    long[CP_RULES] cp_pts               ; chain points in hundreds, all games
+    ubyte[CP_RULES] cp_max              ; longest chain
+    uword[CP_RULES] cp_chains           ; chains started
+    ubyte[6] cp_step = [5, 10, 20, 40, 80, 160]     ; chain steps in hundreds
+    uword cp_kills
+    long cp_score                       ; real score (current rules) in hundreds, all games
+    uword cp_frames
+
+    sub cp_kill() {
+        ubyte r
+        cp_kills++
+        for r in 0 to CP_RULES - 1 {
+            ubyte step = cp_chain[r]
+            if step > 5
+                step = 5
+            long t = cp_pts[r]          ; prog8c 12.3.4: += on a long array element doesn't compile
+            t += ((cp_step[step] as uword) * (score.mult as uword)) as long
+            cp_pts[r] = t
+            if cp_chain[r] == 0
+                cp_chains[r]++
+            if cp_chain[r] != 255
+                cp_chain[r]++
+            if cp_chain[r] > cp_max[r]
+                cp_max[r] = cp_chain[r]
+            cp_timer[r] = cp_window[r]
+        }
+    }
+
+    sub cp_frame() {
+        ; End of a play frame, after the real chain check: the same check for rule 0, the windows for 1-3.
+        if explode.live == 0 and hostiles.flying == 0 and player.invincible == 0
+            cp_chain[0] = 0
+        ubyte r
+        for r in 1 to CP_RULES - 1 {
+            if cp_timer[r] != 0 {
+                cp_timer[r]--
+                if cp_timer[r] == 0
+                    cp_chain[r] = 0
+            }
+        }
+    }
+
+    sub dt_frames_now() -> uword {
+        if DEMO_GALAXY != 0
+            return DEMO_FRAMES - demo.frames_left
+        return demo.PLAY_FRAMES - demo.frames_left
+    }
+
+    sub bcd_value(ubyte b) -> ubyte {
+        return (b >> 4) * 10 + (b & 15)
+    }
     ubyte[DEMO_RUNS] dt_galaxy
     uword[DEMO_RUNS] dt_frames
     ubyte[DEMO_RUNS] dt_count
@@ -793,11 +856,16 @@ main {
         ubyte k
         for k in 0 to DEMO_RUNS - 1 {
             hostiles.kills = 0
+            sys.memset(&cp_chain, CP_RULES, 0)
             demo.late = 0
             demo.turns = 0
             void demo.run()
             dt_galaxy[k] = score.galaxy
-            dt_frames[k] = demo.PLAY_FRAMES - demo.frames_left
+            cp_score += (bcd_value(score.points_hi) as long) * 10000
+            cp_score += (bcd_value(score.points_mid) as long) * 100
+            cp_score += bcd_value(score.points_lo) as long
+            cp_frames += dt_frames_now()
+            dt_frames[k] = dt_frames_now()
             dt_count[k] = stars.count
             dt_left[k] = stars.left
             dt_kills[k] = hostiles.kills
@@ -825,7 +893,24 @@ main {
             hex_byte(r + 27, dt_host[k])
             hex_word(r + 30, dt_turns[k])
         }
-        hex_byte(23 * 40 + 4, demo.max_lines)
+        hex_byte(24 * 40 + 4, demo.max_lines)
+        if DEMO_GALAXY != 0 {
+            ; rows 18-21: rule | chain points (hundreds) | longest chain | chains; row 23: kills | real score
+            ; (hundreds) | frames
+            for k in 0 to CP_RULES - 1 {
+                uword q = (18 + k as uword) * 40 + 4
+                hex_digit(q, k)
+                hex_word(q + 2, msw(cp_pts[k]))
+                hex_word(q + 6, lsw(cp_pts[k]))
+                hex_byte(q + 11, cp_max[k])
+                hex_word(q + 14, cp_chains[k])
+            }
+            uword q2 = 23 * 40 + 4
+            hex_word(q2, cp_kills)
+            hex_word(q2 + 5, msw(cp_score))
+            hex_word(q2 + 9, lsw(cp_score))
+            hex_word(q2 + 14, cp_frames)
+        }
         repeat {
         }
     }
@@ -862,13 +947,13 @@ main {
         video.draw_hud()
         score.new_game()
         sys.memset(video.SCREEN, 40, video.CHAR_SPACE)
-        score.add($00, $06)             ; 60,000: lives 3 -> 6, next 80,000
+        score.add($00, $45)             ; 450,000: lives 3 -> 5 (100,000 and 400,000), next 700,000
         hex_digit(0, score.lives)
         hex_byte(2, score.next_hi)
         hex_byte(4, score.next_mid)
         hex_byte(6, score.next_lo)
         score.mult = 9
-        score.add($00, $10)             ; 9 x 100,000: 960,000, lives 9 (the cap), next 980,000
+        score.add($00, $20)             ; 9 x 200,000: 2,250,000, lives 9 (the cap; 6 more steps), next 2,500,000
         hex_digit(9, score.lives)
         hex_byte(11, score.next_hi)
         hex_byte(13, score.next_mid)

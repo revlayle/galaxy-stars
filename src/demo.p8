@@ -78,9 +78,13 @@ demo {
         main.new_game()
         video.hud_text(HUD_COL, sc:"demo")
         score.galaxy = FIRST_GALAXY + stars.rand_below(GALAXIES)
+        if main.TEST == 40 and main.DEMO_GALAXY != 0
+            score.galaxy = main.DEMO_GALAXY
         on = true
         quit = false
         frames_left = PLAY_FRAMES
+        if main.TEST == 40 and main.DEMO_GALAXY != 0
+            frames_left = main.DEMO_FRAMES
         target = 255
         scan_i = 0
         scan_best = 255
