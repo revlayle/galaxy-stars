@@ -319,6 +319,18 @@ _bcd        .byte ?, ?, ?
         spr_ena = 0
     }
 
+    sub title_mode() {
+        ; Hi-res chars and sprites: the title logo uses all 16 colors.
+        c64.SCROLX &= %11101111
+        c64.SPMC = 0
+    }
+
+    sub game_mode() {
+        ; Multicolor chars, the quasar sprite multicolor (as set up by init()).
+        c64.SCROLX |= %00010000
+        c64.SPMC = QUASAR_SPRITE_BIT
+    }
+
     sub hud_time(ubyte bcd) {
         if main.DEBUG_HUD
             return                      ; the debug readouts use the HUD row

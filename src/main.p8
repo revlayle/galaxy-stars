@@ -9,6 +9,7 @@
 %import score
 %import hostiles
 %import title
+%import pages
 %import prof
 %import quasar
 %import sound
@@ -37,7 +38,11 @@ main {
     ; 34 pickup and invincibility (speed, stars, hostile, explosion, fire, glow), 35 one quasar per galaxy (2 galaxies)
     ; Art (phase 7): 36 showcase for screenshots (no DEBUG_HUD; play frame number in HUD columns 18-21)
     ; Sound (phase 8): 37 every effect in one flow run (DEBUG_HUD: a counter per effect)
+    ; Title and attract (pending change): 38 the flow of test 19, fire held from the game over into the title
+    ; (must not start a game), then the attract cycle; 39 the attract cycle from power-on, fire on page
+    ; ATTRACT_FIRE (0 never, 1 title during the logo build, 2 HOW TO PLAY, 3 SCORING, 4 the second title)
     const ubyte TEST = 0
+    const ubyte ATTRACT_FIRE = 0
     const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or (TEST >= 33 and TEST <= 36))  ; one galaxy, never ends
     const bool NO_DEATH = TEST == 11 or TEST == 12 or TEST == 36  ; the player can't be hurt
 
@@ -67,8 +72,8 @@ main {
             core_map_test()
 
         repeat {
-            if TEST == 0 or TEST == 19
-                title.run()             ; seeds the RNG
+            if TEST == 0 or TEST == 19 or TEST == 38 or TEST == 39
+                attract()               ; seeds the RNG
             else
                 stars.seed()
             new_game()
@@ -80,6 +85,23 @@ main {
             }
             title.game_over()
         }
+    }
+
+    sub attract() {
+        ; TITLE, HOW TO PLAY and SCORING in turn until fire starts a game from any of them; then seed the RNG
+        ; and switch back to the game's multicolor mode.
+        repeat {
+            if title.run()
+                break
+            if pages.how_to_play()
+                break
+            if pages.scoring()
+                break
+        }
+        video.wait_frame()
+        video.clear_screen()
+        video.game_mode()
+        stars.seed()
     }
 
     sub new_game() {
@@ -95,7 +117,7 @@ main {
     sub galaxy_start() {
         ; GALAXY nn for 2 s while the stars appear in random order; no control, the timer doesn't run.
         explode.clear()
-        if TEST == 0 or TEST == 22 or (TEST == 19 and score.galaxy != 1)
+        if TEST == 0 or TEST == 22 or TEST == 39 or ((TEST == 19 or TEST == 38) and score.galaxy != 1)
             stars.place(stars.for_galaxy(score.galaxy))
         else
             test_layout()
@@ -456,6 +478,13 @@ main {
 
     ; ---- game flow self-tests (19-25) ----
     ubyte[] script_title = [60, 0, 1, 16, 0, 0]
+    ; test 38, from the game over: fire pressed after 60 frames and held for 500 (into the title), then released
+    ubyte[] script_hold = [60, 0, 250, 16, 250, 16, 0, 0]
+    ; test 39: fire on page ATTRACT_FIRE (title about 510 frames, HOW TO PLAY 500, SCORING 600)
+    ubyte[] script_fire_1 = [30, 0, 1, 16, 0, 0]
+    ubyte[] script_fire_2 = [250, 0, 250, 0, 250, 0, 10, 0, 1, 16, 0, 0]
+    ubyte[] script_fire_3 = [250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 60, 0, 1, 16, 0, 0]
+    ubyte[] script_fire_4 = [250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 30, 0, 1, 16, 0, 0]
     ; still until a hostile moves, Run/Stop (32), 100 frames paused, Run/Stop
     ubyte[] script_pause = [250, 0, 170, 0, 1, 32, 99, 0, 1, 32, 0, 0]
     ; test 24: after the first respawn, boost towards where the hostile is pushed (direction filled in then)
@@ -496,8 +525,22 @@ main {
             return
         when stage {
             STAGE_TITLE -> {
+                if TEST == 39 {
+                    if title_visits == 0 {
+                        when ATTRACT_FIRE {
+                            1 -> set_script(&script_fire_1)
+                            2 -> set_script(&script_fire_2)
+                            3 -> set_script(&script_fire_3)
+                            4 -> set_script(&script_fire_4)
+                            else -> set_script(&script_still)
+                        }
+                    }
+                } else if TEST == 38 {
+                    if title_visits == 0
+                        set_script(&script_title)   ; later titles keep the game over's script
+                }
                 ; the first title starts a game, the second stays
-                if title_visits == 0
+                else if title_visits == 0
                     set_script(&script_title)
                 else
                     set_script(&script_still)
@@ -506,7 +549,7 @@ main {
             STAGE_PLAY -> {
                 fl_frames = 0
                 when TEST {
-                    19 -> {
+                    19, 38 -> {
                         if score.galaxy == 1
                             set_script(&script_boost_hit)
                         else
@@ -532,7 +575,12 @@ main {
                     }
                 }
             }
-            STAGE_GAME_OVER -> set_script(&script_title)
+            STAGE_GAME_OVER -> {
+                if TEST == 38
+                    set_script(&script_hold)
+                else
+                    set_script(&script_title)
+            }
         }
     }
 

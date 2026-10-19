@@ -261,11 +261,19 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 ## 11. Game flow
 
 ```
-TITLE --fire--> NEW_GAME --> GALAXY_START --> PLAYING
+ATTRACT (TITLE -> HOW TO PLAY -> SCORING -> TITLE ...) --fire--> NEW_GAME --> GALAXY_START --> PLAYING
 PLAYING --stars_left = 0--> GALAXY_CLEAR --> GALAXY_START (galaxy + 1)
 PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 ```
-- **TITLE:** "GALAXY STARS" (yellow), the player star spinning under it, "PRESS FIRE" blinking, "HIGH SCORE" with the session high score, faint background specks. No attract pages for now (designer, 2026-10-17: may be expanded later). Fire (edge-triggered) starts a game.
+- **Attract cycle** (designer, 2026-10-18): TITLE (logo build, then 8 s) → HOW TO PLAY (10 s) → SCORING (12 s) → TITLE ... **[TUNE]** `title.SHOW_FRAMES`, `pages.HOW_FRAMES`, `pages.SCORING_FRAMES`. Fire (edge-triggered: a fire held from the game-over screen doesn't count) starts a game from any page, also during the logo build; the RNG is seeded at that press. After GAME OVER the cycle starts at TITLE. Silent (no music, §13). `main.attract()`.
+- **TITLE** (`title.p8`): hi-res character mode, so the logo chars can use all 16 colors (the game switches multicolor back on; sprites hi-res, the quasar's multicolor bit off).
+  - Logo: "GALAXY" (char rows 3-7, columns 8-30) and "STARS" (rows 10-14, columns 10-28) in 3 x 5 block letters with 1 column between letters; each letter "pixel" is one star char (`icon logo`). 93 chars. The shapes are a string table in `title.p8`.
+  - Build: the logo chars fly in as stars. 7 sprites (1-7; sprite 0 is the player star), white and yellow, each from a random point just off a screen edge (hidden by the border) in a straight line to its char in 8 frames, then the char appears and the sprite starts the next one. Random order. About 112 frames (2.2 s). A landed char flashes white for 2 frames, then takes its band color **[TUNE]**.
+  - After the build: a color band (yellow, then orange, white, light blue, white, orange) rolls diagonally through the letters, one step every 3 frames, and up to 3 random logo chars at a time flash white for 3 frames **[TUNE]**. The band recolor is in assembly so it is done before the beam reaches the logo.
+  - The player star spins under the logo (between it and PRESS FIRE), "PRESS FIRE" blinks (row 19), "HIGH SCORE" with the session high score (row 22), faint background specks.
+- **HOW TO PLAY** and **SCORING** (`pages.p8`): the game's multicolor mode with real tiles and sprites (spinning), text in hi-res cells; graphics centred on pixel column 32, text from column 9. All text is in tables in `pages.p8`.
+  - HOW TO PLAY: player star "MOVE WITH THE STICK / FIRE TO BOOST"; a star "RAM STARS TO MAKE THEM GO / SUPERNOVA: 3 BUMPS OR 1 BOOST"; the swelling star and the explosion's burst frame "HIT STARS SWELL, THEN EXPLODE / GET CLEAR BEFORE THEY BLOW"; a hostile "HURL HOSTILES WITH A BOOST / DON'T LET THEM TOUCH YOU"; the quasar "GRAB A QUASAR FOR 8 SECONDS / OF INVINCIBILITY"; at the bottom "CLEAR ALL STARS TO REACH THE NEXT GALAXY".
+  - SCORING: a star "SUPERNOVA 100 / AND MULTIPLIER +1"; a hostile "HOSTILE CHAIN / 500 1000 2000 4000 8000 16000"; time icon "TIME BONUS 100 PER SECOND"; multiplier icon "ALL POINTS X MULTIPLIER"; lives icon "EXTRA LIFE EVERY 50000". The supernova, chain and extra-life values are read from `score.p8`, so they follow tuning; the "100 per second" is text.
 - **GALAXY_START:** "GALAXY 01" above the player (char row 9) for 2 s while the stars appear in random order, one per frame **[TUNE]**; the player sits in the centre. No control, timer not running. Then PLAYING.
 - **PLAYING:** as described above.
 - **Last star destroyed** (designer, 2026-10-17): the timer and the multiplier stop at once. Play goes on (the player keeps control and can still be hurt) until no explosion is running, no hurled hostile is flying and no death effect is playing. A death meanwhile resets the multiplier before the bonus; if it was the last life, it is game over.
@@ -283,7 +291,8 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 | Hostile spin (4-pointed star, 0°-75° in 15° steps) | 6 |
 | Player lost-a-life effect (shrink) | 3 |
 | Quasar (multicolor) | 4 |
-| **Total** | 19 (of 95) |
+| Title: a logo star flying in | 1 |
+| **Total** | 20 (of 95) |
 
 Clockwise spin plays the frames forward, counter-clockwise backward.
 
@@ -296,7 +305,8 @@ Clockwise spin plays the frames forward, counter-clockwise backward.
 - **Background specks:** 5 chars, own color only (no shared-color pixels), so they stay faint under the white/orange shared colors. Phase 7: hi-res chars (1-px dots), blue (6); their cells have no multicolor bit.
 - **Star kinds** (phase 7, own colors): 0 small dot yellow, 1 4-ray flare white, 2 8-ray flare cyan, 3 ringed star purple, 4 binary pair cyan, 5 large giant yellow, 6 diamond pulsar green, 7 soft-glow nebula star blue.
 - **Sprites** (phase 7): player a plain filled 5-pointed star; hostile a 4-pointed star with a hole in the middle (a shuriken); death effect: 20 frames flashing at full size, then 3 shrink frames of 10 frames each; quasar: white core, light blue disc, cyan jets, 4 frames (the jets' blobs move out, two bright spots turn in the disc).
-- Char budget: 192 free chars (64-255). 8 star kinds (32) + swelling star (8) + 3 explosion frames (108) + 5 specks + 4 icons = 157, leaving 35 spare.
+- **Title logo char** (`icon logo`): one hi-res star glyph (a plump 4-pointed sparkle) that the logo letters are built from; the title colors it.
+- Char budget: 192 free chars (64-255). 8 star kinds (32) + swelling star (8) + 3 explosion frames (108) + 5 specks + 4 icons + 1 logo star = 158, leaving 34 spare.
 - HUD font: ROM screen codes 0-63 copied to chars 0-63 at startup, plus 3 hi-res icon chars (time, multiplier, lives; §2).
 
 ### Pipeline
@@ -304,7 +314,7 @@ Same as Smashy Smashy: editable text art in `assets/sprites.txt` and `assets/til
 
 ## 13. Sound
 
-Basic SID effects only, no music, built in phase 8: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
+Basic SID effects only, no music (the title and attract pages are silent; a music plan is in `docs/title-attract.md` §5), built in phase 8: boost, star hit, supernova, hostile warning, hurl, life lost, extra life, quasar pickup, galaxy clear. Same table-driven player as Smashy Smashy (one voice, stepped by the frame IRQ).
 
 - Voice 1 only. A new effect cuts off the one playing; of two effects requested in the same frame only the later one plays.
 - A hurled hostile's explosion uses the supernova sound; a hostile destroyed by the invincible player uses the hurl sound (phase 8).
@@ -323,7 +333,8 @@ src/hostiles.p8    hostile stars: spawn, steering, hurl
 src/explode.p8     explosion list, drawing, area checks
 src/score.p8       BCD score, multiplier, lives, timer, chains
 src/quasar.p8      quasar spawn and pickup
-src/title.p8       title and game-over screens
+src/title.p8       title (star-built logo) and game-over screens
+src/pages.p8       attract pages: HOW TO PLAY, SCORING
 src/sound.p8       SID effects
 src/gen_assets.p8  GENERATED by tools/gfx.py
 assets/            sprites.txt, tiles.txt
