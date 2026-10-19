@@ -4,6 +4,9 @@
 ; `cover` counts the explosions over each tile: star color changes skip covered tiles, and a tile is
 ; redrawn from the map only when its last explosion ends.
 ; Stars caught by one explosion explode one after another: in random order, each STAGGER frames after the last.
+; Animation (spec section 12): 3 frames, flash, burst, embers. Every explosion runs the same timeline, so on a tile
+; shared by several the newest one has the brightest frame: `owner` holds the newest explosion over each tile and
+; only that one draws there. Frame time: at most one explosion steps its animation per frame.
 ; Frame time: the tiles of an ended explosion are restored through a queue, one explosion per frame (the danger
 ; ends on time); stars.update starts at most one supernova per frame (`starts`).
 
@@ -18,6 +21,16 @@ explode {
     const ubyte COLOR = assets.TILE_EXPLODE_0_COLOR | video.MC
     const ubyte ART = assets.TILE_EXPLODE_0_TL     ; first char of the explosion art (for the assembly)
     &ubyte[video.MAP_W * video.MAP_H] cover = $C600
+    &ubyte[video.MAP_W * video.MAP_H] owner = $C700     ; slot of the newest explosion over each tile
+    ; [TUNE] animation: flash for the first 6 frames, burst until frame 20, then embers
+    const ubyte FLASH_END = 6
+    const ubyte BURST_END = 20
+    const ubyte MAX_LATE = 4            ; an animation step waits for a quiet frame at most this many frames
+    ubyte[3] stage_art = [assets.TILE_EXPLODE_0_TL, assets.TILE_EXPLODE_1_TL, assets.TILE_EXPLODE_2_TL]
+    ubyte[MAX] stage                    ; animation frame drawn: 0 flash, 1 burst, 2 embers
+    ubyte[MAX] step_at                  ; timer value at which the next frame is due (0: no more)
+    ubyte @shared cur_slot              ; draw_area / draw_frame: the explosion being drawn
+    ubyte @shared art_base              ; draw_frame: first char of its animation frame
 
     ubyte[MAX] col
     ubyte[MAX] row
@@ -78,6 +91,9 @@ explode {
         col[s] = c
         row[s] = r
         timer[s] = FRAMES
+        stage[s] = 0
+        step_at[s] = FRAMES - FLASH_END
+        cur_slot = s
         started++
         starts++
         live++
@@ -133,6 +149,17 @@ explode {
         queued++
     }
 
+    sub step(ubyte s) {
+        if main.PROFILE
+            prof.sub_begin()
+        cur_slot = s
+        art_base = stage_art[stage[s]]
+        area_at(col[s], row[s])
+        draw_frame(col[s], row[s])
+        if main.PROFILE
+            prof.sub_end(3)
+    }
+
     sub restore(ubyte c, ubyte r) {
         if main.PROFILE
             prof.sub_begin()
@@ -143,9 +170,9 @@ explode {
     }
 
     asmsub draw_area(ubyte c @A, ubyte r @Y) clobbers(X, Y) -> ubyte @A {
-        ; Explosion start, the tiles of the area c0-c1, r0-r1 (set by area_at) around centre tile (c, r): the art
-        ; (stored tile by tile, row by row, 4 chars each), one more in cover, and the stars there listed in
-        ; caught_stars. Returns how many stars. Assembly: 36 chars and 36 colors (frame time).
+        ; Explosion start, the tiles of the area c0-c1, r0-r1 (set by area_at) around centre tile (c, r): the flash
+        ; art (stored tile by tile, row by row, 4 chars each), one more in cover, cur_slot in owner, and the stars
+        ; there listed in caught_stars. Returns how many stars. Assembly: 36 chars and 36 colors (frame time).
         %asm {{
 _scr = P8ZP_SCRATCH_W1
 _clr = P8ZP_SCRATCH_W2
@@ -209,6 +236,8 @@ _tile
             adc  _tc
             tax                         ; tile index
             inc  p8b_explode.p8v_cover,x
+            lda  p8b_explode.p8v_cur_slot
+            sta  p8b_explode.p8v_owner,x    ; the newest explosion here
             lda  p8b_video.p8v_tiles,x
             beq  +
             ldy  _n
@@ -268,6 +297,105 @@ _done
         }}
     }
 
+    asmsub draw_frame(ubyte c @A, ubyte r @Y) clobbers(A, X, Y) {
+        ; Animation step of explosion cur_slot around centre tile (c, r), area c0-c1, r0-r1 (set by area_at): the
+        ; chars of the frame starting at art_base, only on the tiles it owns (the colors stay). Assembly.
+        %asm {{
+_scr = P8ZP_SCRATCH_W1
+            .section BSS
+_c          .byte ?
+_r          .byte ?
+_tr         .byte ?
+_tc         .byte ?
+_ch         .byte ?
+            .send BSS
+            sta  _c
+            sty  _r
+            lda  p8b_explode.p8v_r0
+            sta  _tr
+_row
+            ; first char of the row's first tile: art_base + ((tr - r + 1) * 3 + (c0 - c + 1)) * 4
+            lda  _tr
+            sec
+            sbc  _r
+            clc
+            adc  #1
+            sta  _ch
+            asl  a
+            clc
+            adc  _ch
+            sta  _ch
+            lda  p8b_explode.p8v_c0
+            sec
+            sbc  _c
+            clc
+            adc  #1
+            clc
+            adc  _ch
+            asl  a
+            asl  a
+            clc
+            adc  p8b_explode.p8v_art_base
+            sta  _ch
+            ldy  _tr
+            lda  p8b_explode.p8v_c0
+            sta  _tc
+            asl  a
+            clc
+            adc  p8b_video.p8v_tile_row_addr_lsb,y
+            sta  _scr
+            lda  p8b_video.p8v_tile_row_addr_msb,y
+            adc  #0
+            sta  _scr+1
+_tile
+            ldy  _tr
+            lda  p8b_video.p8v_row_start,y
+            clc
+            adc  _tc
+            tax
+            lda  p8b_explode.p8v_owner,x
+            cmp  p8b_explode.p8v_cur_slot
+            bne  _next
+            lda  _ch
+            ldy  #0
+            sta  (_scr),y
+            clc
+            adc  #1
+            iny
+            sta  (_scr),y
+            adc  #1
+            ldy  #40
+            sta  (_scr),y
+            adc  #1
+            iny
+            sta  (_scr),y
+_next
+            lda  _tc
+            cmp  p8b_explode.p8v_c1
+            beq  _rowdone
+            inc  _tc
+            lda  _ch
+            clc
+            adc  #4
+            sta  _ch
+            lda  _scr
+            clc
+            adc  #2
+            sta  _scr
+            bcc  _tile
+            inc  _scr+1
+            jmp  _tile
+_rowdone
+            lda  _tr
+            cmp  p8b_explode.p8v_r1
+            beq  _done
+            inc  _tr
+            jmp  _row
+_done
+            rts
+        }}
+    }
+
     asmsub restore_area() clobbers(A, X, Y) {
         ; Explosion end, the tiles of the area c0-c1, r0-r1 (set by area_at): one less in cover, and a tile with no
         ; explosion left over it is redrawn from the map. Assembly (frame time).
@@ -309,12 +437,29 @@ _done
     }
 
     sub update() {
+        ; Timers, then at most one animation step, then one queued restore. Frame time: a step waits while this
+        ; frame already starts an explosion or restores one (the heaviest work), up to MAX_LATE frames.
         ubyte s
+        bool stepped = false
         for s in 0 to MAX - 1 {
-            if timer[s] != 0 {
-                timer[s]--
-                if timer[s] == 0
+            ubyte t = timer[s]
+            if t != 0 {
+                t--
+                timer[s] = t
+                if t == 0
                     finish(s)
+                else if t <= step_at[s] {
+                    if stepped
+                        continue
+                    if (starts == 0 and queued == 0) or step_at[s] - t >= MAX_LATE {
+                        stage[s]++
+                        step_at[s] = 0
+                        if stage[s] == 1
+                            step_at[s] = FRAMES - BURST_END
+                        step(s)
+                        stepped = true
+                    }
+                }
             }
         }
         if queued != 0 {

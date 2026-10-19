@@ -27,13 +27,17 @@ stars {
     const ubyte FAST_FLASH = 25         ; [TUNE] last half second flashes faster
     const ubyte NO_HIT_FRAMES = 10      ; [TUNE] a star counts one hit per contact
     const ubyte STAGGER = 6             ; [TUNE] extra countdown frames per further star caught by one explosion
-    ; [art phase] hit feedback colors, indexed by the star's own color: hits 1 and 2.
+    ; Hit feedback (spec section 12): the star's own color only, indexed by its own color: hits 1 and 2.
     ; Mostly yellow then white; yellow and white stars use white/yellow then cyan.
     ubyte[8] hit1_color = [7, 7, 7, 7, 7, 7, 7, 1]
     ubyte[8] hit2_color = [1, 3, 1, 1, 1, 1, 1, 3]
-    ; countdown flash: white and black (the star's glow stays) [art phase]
-    const ubyte FLASH_ON = 1
-    const ubyte FLASH_OFF = 0
+    ; Countdown: every kind turns into the shared swelling star, alternating its two frames (big and white,
+    ; small and yellow) every 8 frames; in the last half second the big one flashes white and yellow every 2 frames
+    ; (colors only: frame time, many stars can be in their last half second at once).
+    const ubyte SWELL_BIG = assets.TILE_SWELL_1_TL
+    const ubyte SWELL_BIG_COLOR = 1
+    const ubyte SWELL_SMALL = assets.TILE_SWELL_0_TL
+    const ubyte SWELL_SMALL_COLOR = 7
     ; turning hostile (spec section 7): flashes red for 1 s, alternating with its own color every 4 frames
     const ubyte WARNING_FRAMES = 50
     const ubyte WARNING_COLOR = 2
@@ -46,6 +50,7 @@ stars {
     ubyte[MAX] timer
     ubyte[MAX] no_hit                   ; frames before this star can count a hit again
     ubyte[MAX] shown                    ; color RAM value it is drawn with (MC bit included)
+    ubyte[MAX] shown_char               ; top-left char it is drawn with (its kind, or the swelling star)
     bool[MAX] from_blast                ; COUNTDOWN started by an explosion (keeps the hostile chain alive)
     ubyte count
     ubyte left                          ; stars not destroyed yet: stationary stars plus active hostiles
@@ -132,6 +137,7 @@ stars {
         timer[i] = 0
         no_hit[i] = 0
         shown[i] = video.star_color[k]
+        shown_char[i] = video.star_char[k]
         video.tiles[video.row_start[r] + c] = i + 1
         count++
         left++
@@ -281,11 +287,11 @@ stars {
         from_blast[i] = false
         hits[i] = HITS_TO_NOVA
         timer[i] = COUNTDOWN_FRAMES
-        set_color(i, FLASH_ON)
+        set_look(i, SWELL_BIG, SWELL_BIG_COLOR)
     }
 
     sub set_color(ubyte i, ubyte co) {
-        ; Recolors the star's tile, unless an explosion is drawn over it (draw_tile uses `shown` later).
+        ; Recolors the star's tile (its chars stay), unless an explosion is drawn over it.
         co |= video.MC
         if shown[i] == co
             return
@@ -294,6 +300,30 @@ stars {
         ubyte r = row[i]
         if explode.cover[video.row_start[r] + c] == 0 {
             ^^ubyte @zp p = video.tile_row_addr[r] + (c << 1) + (video.COLOR_RAM - video.SCREEN)
+            p[0] = co
+            p[1] = co
+            p[40] = co
+            p[41] = co
+        }
+    }
+
+    sub set_look(ubyte i, ubyte ch, ubyte co) {
+        ; Redraws the star's tile with chars ch.. and color co, unless an explosion is drawn over it (draw_tile
+        ; uses `shown_char` and `shown` later). Nothing when both are unchanged.
+        co |= video.MC
+        if shown[i] == co and shown_char[i] == ch
+            return
+        shown[i] = co
+        shown_char[i] = ch
+        ubyte c = col[i]
+        ubyte r = row[i]
+        if explode.cover[video.row_start[r] + c] == 0 {
+            ^^ubyte @zp p = video.tile_row_addr[r] + (c << 1)
+            p[0] = ch
+            p[1] = ch + 1
+            p[40] = ch + 2
+            p[41] = ch + 3
+            p += video.COLOR_RAM - video.SCREEN
             p[0] = co
             p[1] = co
             p[40] = co
@@ -339,13 +369,21 @@ stars {
                     if t == 0
                         novas_due = true
                 }
-                ubyte phase = t >> 3
-                if t <= FAST_FLASH
-                    phase = t >> 1
-                if phase & 1 == 0
-                    set_color(i, FLASH_ON)
-                else
-                    set_color(i, FLASH_OFF)
+                if t <= FAST_FLASH {
+                    ; last half second: the big swell, flashing by color
+                    ubyte co = SWELL_BIG_COLOR
+                    if (t >> 1) & 1 != 0
+                        co = SWELL_SMALL_COLOR
+                    if shown_char[i] != SWELL_BIG
+                        set_look(i, SWELL_BIG, co)
+                    else
+                        set_color(i, co)
+                } else if (t >> 3) & 1 == 0 {
+                    ; a countdown star's color goes with its swell frame here, so the char tells if the look changes
+                    if shown_char[i] != SWELL_BIG
+                        set_look(i, SWELL_BIG, SWELL_BIG_COLOR)
+                } else if shown_char[i] != SWELL_SMALL
+                    set_look(i, SWELL_SMALL, SWELL_SMALL_COLOR)
             }
             i++
         }

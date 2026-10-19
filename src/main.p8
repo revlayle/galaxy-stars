@@ -34,9 +34,10 @@ main {
     ; 32 map of an explosion's round core (explode.hits), no play
     ; Quasar (phase 6, quasar.ALWAYS is on for these; DEBUG_HUD): 33 quasar appears and burns out,
     ; 34 pickup and invincibility (speed, stars, hostile, explosion, fire, glow), 35 one quasar per galaxy (2 galaxies)
+    ; Art (phase 7): 36 showcase for screenshots (no DEBUG_HUD; play frame number in HUD columns 18-21)
     const ubyte TEST = 0
-    const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or TEST == 33 or TEST == 34)  ; one galaxy, never ends
-    const bool NO_DEATH = TEST == 11 or TEST == 12  ; spawn and frame time tests: the player can't be hurt
+    const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or (TEST >= 33 and TEST <= 36))  ; one galaxy, never ends
+    const bool NO_DEATH = TEST == 11 or TEST == 12 or TEST == 36  ; the player can't be hurt
 
     ; [TUNE] game flow
     const ubyte START_FRAMES = 100      ; GALAXY nn for 2 s while the stars appear, one per frame
@@ -258,6 +259,20 @@ main {
             stars.start_warning(3)          ; a hostile that stands still at the right edge
             hostiles.set_speed(0)
         }
+        if TEST == 36 {
+            ubyte j
+            for j in 0 to 7 {
+                stars.hit(j * 3 + 1, 1)
+                stars.hit(j * 3 + 2, 2)
+            }
+            stars.start_countdown(24)
+            stars.timer[24] = 200
+            stars.start_countdown(25)
+            stars.timer[25] = 192
+            stars.start_warning(27)
+            hostiles.set_speed(0)
+            quasar.chance(5, 6)
+        }
         if input.SCRIPTED
             select_script()
         void play()
@@ -305,6 +320,7 @@ main {
     ; test 34: boosted hit on star 0, back off left and wait for its quasar; then right into the quasar and on
     ; through stars 1 and 2 to the hostile at the edge; a fire press there (does nothing while invincible); keep
     ; pushing right until the invincibility is over
+    ubyte[] script_art = [70, 0, 1, 16, 0, 0]  ; test 36: still, a boost at frame 70
     ubyte[] script_quasar = [50, 0, 1, 8 | 16, 30, 8, 60, 4, 100, 0, 150, 8, 1, 8 | 16, 250, 8, 250, 8, 0, 0]
 
     sub test_layout() {
@@ -364,6 +380,19 @@ main {
                 stars.add(10, 4, 1)
             }
             28 -> stars.add(19, 5, 0)       ; turns hostile; hurled right near the edge
+            36 -> {
+                ; the 8 kinds plain (row 1), at 1 hit (row 3) and 2 hits (row 11): stars 0-23
+                ubyte k
+                for k in 0 to 7 {
+                    stars.add(2 + k * 2, 1, k)
+                    stars.add(2 + k * 2, 3, k)
+                    stars.add(2 + k * 2, 11, k)
+                }
+                stars.add(1, 6, 0)          ; 24, 25: countdowns, in opposite swell frames
+                stars.add(3, 6, 1)
+                stars.add(16, 6, 2)         ; 26: warning shortly before the first shot
+                stars.add(18, 6, 3)         ; 27: turns hostile and stands still
+            }
             27 -> {
                 stars.add(15, 5, 0)         ; turns hostile
                 stars.add(12, 5, 1)         ; the hostile is over it when it is hurled
@@ -411,6 +440,7 @@ main {
             17 -> input.script = &script_hit_back
             33 -> input.script = &script_boost_hit
             34 -> input.script = &script_quasar
+            36 -> input.script = &script_art
         }
     }
 
@@ -495,8 +525,33 @@ main {
         }
     }
 
+    uword art_f
+
+    sub art_frame() {
+        ; Test 36: the showcase timeline. Shots: 60 (stars, explosions: flash, burst, embers and an overlapping
+        ; pair, warning, hostile, quasar, player normal), 80 boosting, 100 invincible, 115 death flash, 135/145/155
+        ; shrink frames.
+        art_f++
+        when art_f {
+            35 -> explode.start(13, 6)      ; embers at 60
+            40 -> explode.start(12, 9)      ; overlapping pair: embers and burst at 60
+            42 -> stars.start_warning(26)
+            48 -> explode.start(6, 9)       ; burst at 60
+            50 -> explode.start(14, 9)
+            58 -> explode.start(2, 9)       ; flash at 60
+            90 -> player.make_invincible()
+            110 -> {
+                player.invincible = 0
+                player.hurt()
+            }
+        }
+        hex_word(18, art_f)
+    }
+
     sub test_frame() {
         ; Called every frame of play (and of the galaxy clear screen) in test builds.
+        if TEST == 36
+            art_frame()
         if OLD_TEST {
             if DEBUG_HUD {
                 ; the next frame IRQ came during this frame's work (not counted after a readout redraw,

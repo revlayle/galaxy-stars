@@ -7,8 +7,11 @@ video {
     ; ---- colors ----
     const ubyte COLOR_BORDER = 0
     const ubyte COLOR_BG = 0            ; $D021, art symbol '.' in chars
-    const ubyte COLOR_CHAR_MC1 = 11     ; $D022, art symbol '2' in chars (dark grey) [art phase]
-    const ubyte COLOR_CHAR_MC2 = 12     ; $D023, art symbol '3' in chars (grey) [art phase]
+    const ubyte COLOR_CHAR_MC1 = 1      ; $D022, art symbol '2' in chars: white, hot cores (spec section 12)
+    const ubyte COLOR_CHAR_MC2 = 8      ; $D023, art symbol '3' in chars: orange, glows and rays
+    const ubyte QUASAR_SPRITE_BIT = %10000000   ; sprite 7 (the quasar) is multicolor, the others hi-res
+    const ubyte COLOR_SPRITE_MC0 = 1    ; $D025, art symbol '2' in msprites: white (the quasar's core)
+    const ubyte COLOR_SPRITE_MC1 = 3    ; $D026, art symbol '3' in msprites: cyan (the quasar's jets)
     const ubyte COLOR_HUD = 1           ; hi-res text, must be 0-7
     const ubyte MC = 8                  ; color RAM bit 3: the cell is multicolor
 
@@ -44,7 +47,7 @@ video {
     ubyte[] speck_char = [assets.CHAR_SPECK_0, assets.CHAR_SPECK_1, assets.CHAR_SPECK_2,
                           assets.CHAR_SPECK_3, assets.CHAR_SPECK_4]
     const ubyte SPECK_KINDS = len(speck_char)
-    const ubyte SPECK_COLOR = assets.CHAR_SPECK_0_COLOR | MC
+    const ubyte SPECK_COLOR = assets.CHAR_SPECK_0_COLOR     ; hi-res cell (no MC bit): 1-px dots, own color only
 
     sub init() {
         c64.SPENA = 0
@@ -73,7 +76,9 @@ video {
         cbm.HIBASE = $C0
 
         c64.SCROLX |= %00010000         ; multicolor chars
-        c64.SPMC = 0                    ; hi-res sprites
+        c64.SPMC = QUASAR_SPRITE_BIT    ; hi-res sprites but the quasar
+        c64.SPMC0 = COLOR_SPRITE_MC0
+        c64.SPMC1 = COLOR_SPRITE_MC1
         c64.EXTCOL = COLOR_BORDER
         c64.BGCOL0 = COLOR_BG
         c64.BGCOL1 = COLOR_CHAR_MC1
@@ -81,7 +86,7 @@ video {
     }
 
     asmsub draw_tile(ubyte col @A, ubyte row @Y) clobbers(A, X, Y) {
-        ; One tile from the tile map: a star (its chars in its shown color) or empty space with its speck.
+        ; One tile from the tile map: a star (its shown chars in its shown color) or empty space with its speck.
         ; Assembly: explosions restore 9 tiles at a time (frame time).
         %asm {{
 _scr = P8ZP_SCRATCH_W1
@@ -110,8 +115,7 @@ _co         .byte ?
             tay                         ; star index + 1
             lda  p8b_stars.p8v_shown-1,y
             sta  _co
-            ldx  p8b_stars.p8v_kind-1,y
-            lda  p8b_video.p8v_star_char,x
+            lda  p8b_stars.p8v_shown_char-1,y
             ldy  #0
             sta  (_scr),y
             clc

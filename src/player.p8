@@ -39,8 +39,10 @@ player {
     const ubyte DIE_FRAMES = 50         ; 1 s death effect, the player stays where it was hit
     const ubyte SAFE_FRAMES = 100       ; 2 s after reappearing: hostiles and explosions can't hurt
     const ubyte SAFE_BLINK = 4          ; [TUNE] the sprite is shown 4 frames, hidden 4
-    ; [art phase] death effect placeholder: the sprite flashes through these, one every 2 frames
+    ; death effect: the sprite flashes through these, one every 2 frames, spinning fast at full size for the first
+    ; 20 frames, then shrinks away in 3 steps of 10 frames (SPR_DIE_0-2) [TUNE]
     ubyte[4] die_colors = [1, 2, 7, 0]
+    const ubyte SHRINK_START = 30
     ; invincibility (spec section 9): 8 s; the color cycles every 2 frames, every 8 in the last second [TUNE]
     const uword INVINCIBLE_FRAMES = 400
     const ubyte INVINCIBLE_SECS = INVINCIBLE_FRAMES / 50    ; HUD countdown
@@ -315,6 +317,14 @@ player {
             video.hide_sprite(0)
             return
         }
-        video.set_sprite(0, assets.SPR_PLAYER_0 + anim_frame, color, x - BOX_INSET, y - BOX_INSET)
+        ubyte frame = assets.SPR_PLAYER_0 + anim_frame
+        if dying != 0 and dying <= SHRINK_START {
+            frame = assets.SPR_DIE_2
+            if dying > SHRINK_START - 10
+                frame = assets.SPR_DIE_0
+            else if dying > SHRINK_START - 20
+                frame = assets.SPR_DIE_1
+        }
+        video.set_sprite(0, frame, color, x - BOX_INSET, y - BOX_INSET)
     }
 }

@@ -7,6 +7,8 @@ Reads assets/sprites.txt and assets/tiles.txt and writes
 
 Entries (a ';' starts a comment):
   sprite <name>                          21 rows of 24 hi-res pixels: . 1
+  msprite <name>                         21 rows of 12 multicolor pixels: . 1 2 3 (1 = the sprite's own
+                                         color, 2 = $D025, 3 = $D026); the code sets the sprite to multicolor
   tile <name> color <0-7> [size <W>x<H>] 16*H rows of 8*W multicolor pixels: . 1 2 3
                                          (W x H tiles of 2x2 chars; stored tile by tile, row by row,
                                          each tile as TL, TR, BL, BR)
@@ -34,6 +36,7 @@ FIRST_CHAR = 64             # chars 0-63 hold the ROM font for the HUD
 MAX_CHARS = 256 - FIRST_CHAR
 
 MC_BITS = {".": 0, "2": 1, "3": 2, "1": 3}
+SPRITE_MC_BITS = {".": 0, "2": 1, "1": 2, "3": 3}   # 01 = $D025, 10 = sprite color, 11 = $D026
 HIRES_BITS = {".": 0, "1": 1}
 NAME_RE = r"[a-z][a-z0-9_]*"
 
@@ -52,6 +55,8 @@ class Entry:
         """(pixels per row, rows)"""
         if self.kind == "sprite":
             return 24, 21
+        if self.kind == "msprite":
+            return 12, 21
         if self.kind == "tile":
             return 8 * self.w, 16 * self.h
         return 8, 8
@@ -68,9 +73,9 @@ def parse_header(words, where, errors):
         return None
     e = Entry(kind, words[1], where)
     rest = words[2:]
-    if kind == "sprite":
+    if kind in ("sprite", "msprite"):
         if rest:
-            errors.append(f"{where}: expected 'sprite <name>'")
+            errors.append(f"{where}: expected '{kind} <name>'")
             return None
         return e
     if len(rest) < 2 or rest[0] != "color" or not rest[1].isdigit() or int(rest[1]) > 7:
@@ -109,7 +114,7 @@ def parse_file(path, entries, errors):
         if not line:
             continue
         words = line.split()
-        if words[0] in ("sprite", "tile", "char", "icon"):
+        if words[0] in ("sprite", "msprite", "tile", "char", "icon"):
             finish(lineno)
             current = parse_header(words, where, errors)
             swallowing = current is None
@@ -136,14 +141,14 @@ def parse_file(path, entries, errors):
     finish(len(lines) + 1)
 
 
-def pack_bytes(row, multicolor):
+def pack_bytes(row, multicolor, bits=MC_BITS):
     """One art row -> bytes, 8 hi-res or 4 multicolor pixels per byte."""
     out = []
     step = 4 if multicolor else 8
     for i in range(0, len(row), step):
         value = 0
         for ch in row[i:i + step]:
-            value = (value << 2) | MC_BITS[ch] if multicolor else (value << 1) | HIRES_BITS[ch]
+            value = (value << 2) | bits[ch] if multicolor else (value << 1) | HIRES_BITS[ch]
         out.append(value)
     return out
 
@@ -154,10 +159,13 @@ def build(entries):
     consts = []
     for e in entries:
         up = e.name.upper()
-        if e.kind == "sprite":
+        if e.kind in ("sprite", "msprite"):
             frame = bytearray(64)
             for y, row in enumerate(e.rows):
-                frame[y * 3:y * 3 + 3] = bytes(pack_bytes(row, False))
+                if e.kind == "sprite":
+                    frame[y * 3:y * 3 + 3] = bytes(pack_bytes(row, False))
+                else:
+                    frame[y * 3:y * 3 + 3] = bytes(pack_bytes(row, True, SPRITE_MC_BITS))
             consts.append(f"    const ubyte SPR_{up} = {FIRST_SPRITE_PTR + len(sprites) // 64}")
             sprites += frame
         elif e.kind == "tile":
@@ -189,12 +197,12 @@ def main():
 
     seen = {}
     for e in entries:
-        key = "char" if e.kind == "icon" else e.kind    # both become CHAR_<NAME>
+        key = {"icon": "char", "msprite": "sprite"}.get(e.kind, e.kind)    # same constant prefix
         if (key, e.name) in seen:
             errors.append(f"{e.where}: {e.kind} '{e.name}' already defined at {seen[(key, e.name)]}")
         seen[(key, e.name)] = e.where
-    n_sprites = sum(1 for e in entries if e.kind == "sprite")
-    n_chars = sum(4 * e.w * e.h if e.kind == "tile" else 1 for e in entries if e.kind != "sprite")
+    n_sprites = sum(1 for e in entries if e.kind in ("sprite", "msprite"))
+    n_chars = sum(4 * e.w * e.h if e.kind == "tile" else 1 for e in entries if e.kind in ("tile", "char", "icon"))
     if n_sprites > MAX_SPRITES:
         errors.append(f"too many sprites: {n_sprites}, max {MAX_SPRITES}")
     if n_chars > MAX_CHARS:

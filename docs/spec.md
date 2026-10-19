@@ -40,7 +40,7 @@ char rows 1-24    playfield: 20 x 12 tiles, each tile 2x2 chars (16x16 px)
 
 ### Graphics modes
 - **Characters: multicolor character mode** ($D016 bit 4). Shared colors: background $D021 (black), MC1 $D022, MC2 $D023. Color RAM values 8-15 make a cell multicolor, 0-7 hi-res. HUD text stays crisp hi-res. Multicolor cells limit each tile's own color to 0-7; the shared colors can be any of the 16.
-- **Sprites: hi-res** (single color, 24x21, $D01C = 0). The player and hostile stars are star shapes that need the full resolution for clean points and smooth rotation. The quasar may be multicolor if it looks better (decided in the art phase).
+- **Sprites: hi-res** (single color, 24x21). The player and hostile stars are star shapes that need the full resolution for clean points and smooth rotation. The quasar (sprite 7) is multicolor (phase 7): `$D01C = $80`, `$D025` white (its core), `$D026` cyan (its jets), its own color light blue (its disc).
 
 ## 3. Memory map
 
@@ -76,6 +76,8 @@ Same scheme as Smashy Smashy: the VIC-II in **bank 3 ($C000-$FFFF)**, the progra
 Background specks have their own map, `&ubyte[240] specks = $C500`: 0 = none, else `(speck kind + 1) << 2 | char` (char 0-3 = TL, TR, BL, BR of the tile).
 
 Explosion cover map, `&ubyte[240] cover = $C600`: the number of active explosions drawn over each tile. Star color changes skip covered tiles, and a tile is redrawn from the tile map when its last explosion ends.
+
+Explosion owner map, `&ubyte[240] owner = $C700`: the slot of the newest explosion over each tile; only that one draws its animation frames there (§12).
 
 ### Stationary stars
 Parallel arrays, up to 55 entries: `col`, `row`, `kind` (art type 0-7), `state`, `hits` (supernova counter), `timer` (frames). States:
@@ -141,12 +143,12 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - A star only counts one hit per contact: after a bounce, the same star can't count again for 10 frames **[TUNE]**.
 - **No bounce trap** (designer, 2026-10-18): touching a different star during a knockback (one that started in an earlier frame) stops the knockback there instead of bouncing again, and control returns at once. That touch still counts as a hit (+3 while boosting). Without this, a player lined up between two stars with one empty tile between them bounced back and forth with no control until a star exploded. (A compiler bug that turned diagonal bounces into sideways ones made this much more frequent; fixed, see the phase 5 notes.)
 - Touching a star already in `COUNTDOWN` bounces the player but adds nothing.
-- Counter feedback: `hits` 1 and 2 brighten the star (a different color per step); `COUNTDOWN` flashes the star, faster in the last half second. Colors are picked in the art phase; if multicolor limits make it unreadable, record the fallback in phase notes.
+- Counter feedback: `hits` 1 and 2 change the star's own color (yellow, then white; yellow and white stars: white or yellow, then cyan). `COUNTDOWN`: the star turns into the swelling star (§12).
 
 ### Supernova
 - Explosions also come from hostiles hurled by a boost (§7); they behave the same.
 - When a countdown ends, the star explodes: tile cleared, star `GONE`, an explosion starts covering the 3 x 3 tiles around it.
-- An explosion lasts 0.6 s = 30 frames and is dangerous for its whole duration **[TUNE]**. It is drawn with explosion chars over the 3 x 3 tiles (animated, expanding then fading) and the tiles are restored afterwards.
+- An explosion lasts 0.6 s = 30 frames and is dangerous for its whole duration **[TUNE]**. It is drawn with explosion chars over the 3 x 3 tiles (animated: flash, burst, embers, §12) and the tiles are restored afterwards.
 - While an explosion is active:
   - **Round core** (designer, 2026-10-18): the player and hostile stars are hit only when their centre is within 22 px of the explosion's centre (the centre of its centre tile), measured as the longer axis distance plus half the shorter, an octagon close to a circle **[TUNE]** `explode.REACH`. The bright part of the art is about 36 px across. Before, any overlap of the 13 x 13 box with the 48 x 48 square counted, corners included, so the player died touching only the empty corners or the faint fringe. A hostile diagonally next to the exploding star (centre about 23 px away) is now outside the core.
   - **Player** in the core: loses a life (§8), unless invincible.
@@ -252,7 +254,7 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 - Galaxy `n` has `min(55, 15 + 2 * (n - 1))` stars (55 from galaxy 21; designer, 2026-10-18: was 45 from galaxy 16).
 - Placement: random free tiles, never in the 4 x 4 tiles around the player's start (tile columns 8-11, rows 4-7). Stars may be next to each other (chain reactions).
 - Each star gets a random `kind` (art type 0-7).
-- Background specks: about one empty tile in four shows a faint speck (1-2 px dots in dark grey, grey or blue) in one of its 4 chars **[TUNE]**. Specks are decoration only: they live in the screen, not the tile map, and are redrawn when a tile is restored.
+- Background specks: about one empty tile in four shows a faint speck (1-px dots, blue, in a hi-res cell; phase 7) in one of its 4 chars **[TUNE]**. Specks are decoration only: they live in the screen, not the tile map, and are redrawn when a tile is restored.
 - 60 seconds per galaxy. At 0 the timer stops; play continues with no penalty and no clear bonus.
 - RNG: Prog8's `math.rnd()`, seeded from the raster line and frame counter when fire is pressed on the title screen.
 
@@ -279,9 +281,9 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 |---|---|
 | Player spin (plain yellow 5-pointed star, no face; 0°-60° in 12° steps) | 6 |
 | Hostile spin (4-pointed star, 0°-75° in 15° steps) | 6 |
-| Player lost-a-life effect | 2-4 |
-| Quasar | 2-4 |
-| **Total** | about 20 (of 95) |
+| Player lost-a-life effect (shrink) | 3 |
+| Quasar (multicolor) | 4 |
+| **Total** | 19 (of 95) |
 
 Clockwise spin plays the frames forward, counter-clockwise backward.
 
@@ -289,9 +291,11 @@ Clockwise spin plays the frames forward, counter-clockwise backward.
 - **Shared char colors** (designer, 2026-10-18): `$D022` = white (1) for hot cores, `$D023` = orange (8) for glows and rays. They apply to every multicolor char: stars, explosion, specks.
 - **8 stationary star kinds**, 8 distinct shapes (not shapes x colors): small dot, 4-ray flare, 8-ray flare, ringed star, binary pair, large giant, diamond pulsar, soft-glow nebula star. White core and orange glow from the shared colors; the kind's own color (0-7) mostly realistic star colors (white, blue, yellow, cyan), purple and green sparingly. Red (2) is kept for the hostile warning flash. None of them may look like the player's 5-pointed outline: the player must stand out from the stationary stars.
 - **Hit feedback:** hits 1 and 2 change the star's own color only (extra shapes for 8 kinds don't fit the char budget).
-- **Countdown "swelling" star:** one shared tile, 2 frames (8 chars), that every kind turns into for its 2 s countdown, flashing faster near the end, then explodes from.
-- **Explosion:** 3 x 3 tiles = 6 x 6 chars per frame, 3 frames: small white flash, full orange burst, fading embers. Own color yellow (7). Where explosions overlap, the brighter frame (flash > burst > embers) wins on shared tiles, so no stray slivers.
-- **Background specks:** 4-6 chars, own color only (no shared-color pixels), so they stay faint under the white/orange shared colors.
+- **Countdown "swelling" star:** one shared tile, 2 frames (8 chars), that every kind turns into for its 2 s countdown, flashing faster near the end, then explodes from. Phase 7: it alternates big/white and small/yellow every 8 frames; in the last half second it stays big and flashes white/yellow every 2 frames by color only (frame time: many stars can be in their last half second at once) **[TUNE]**.
+- **Explosion:** 3 x 3 tiles = 6 x 6 chars per frame, 3 frames: small white flash, full orange burst, fading embers. Own color yellow (7). Where explosions overlap, the brighter frame (flash > burst > embers) wins on shared tiles, so no stray slivers. Phase 7: flash for 6 frames, burst for 14, embers for the last 10 **[TUNE]**. Every explosion runs the same timeline, so the newest one over a tile is the brightest; it owns the tile (`owner` map, §4). Frame time: at most one explosion changes frame per frame, and a change waits while that frame starts or restores an explosion, at most 4 frames.
+- **Background specks:** 5 chars, own color only (no shared-color pixels), so they stay faint under the white/orange shared colors. Phase 7: hi-res chars (1-px dots), blue (6); their cells have no multicolor bit.
+- **Star kinds** (phase 7, own colors): 0 small dot yellow, 1 4-ray flare white, 2 8-ray flare cyan, 3 ringed star purple, 4 binary pair cyan, 5 large giant yellow, 6 diamond pulsar green, 7 soft-glow nebula star blue.
+- **Sprites** (phase 7): player a plain filled 5-pointed star; hostile a 4-pointed star with a hole in the middle (a shuriken); death effect: 20 frames flashing at full size, then 3 shrink frames of 10 frames each; quasar: white core, light blue disc, cyan jets, 4 frames (the jets' blobs move out, two bright spots turn in the disc).
 - Char budget: 192 free chars (64-255). 8 star kinds (32) + swelling star (8) + 3 explosion frames (108) + 5 specks + 4 icons = 157, leaving 35 spare.
 - HUD font: ROM screen codes 0-63 copied to chars 0-63 at startup, plus 3 hi-res icon chars (time, multiplier, lives; §2).
 

@@ -226,7 +226,7 @@ Done when:
 - Frame time (test 12, galaxy 21): 16 fixed seeds on the phase 5 code and on this code with the quasar roll switched off (so both play the same game): the same dropped frames in both, 1 frame in one seed, 0 in the other 15. The slowest frame is 1-2 raster lines longer with this phase's checks. The one dropped frame in a seed shows the margin at galaxy 21 is still thin (phase 5 noted the same once); the explosion animation in phase 7 has to be checked against it. One more run with the startup seed also dropped 1 frame, with no quasar in that game.
 
 ## Phase 7: Art
-**Status:** not started
+**Status:** done
 **Spec:** §12
 
 Build: final sprites and chars per spec §12 (art direction decided 2026-10-18), replacing the placeholders listed in earlier notes:
@@ -240,10 +240,28 @@ Build: final sprites and chars per spec §12 (art direction decided 2026-10-18),
 Frame time is the main risk: at galaxy 21, test 12 already drops 1 frame in 1 of 16 seeds (phase 6 notes). Measure with the CIA-timer profiler (`src/prof.p8`) before and after, on the same 16 seeds. Animation steps can be spread over frames (e.g. one explosion's step per frame) as long as no explosion visibly lags.
 
 Done when:
-- [ ] Screenshots of: all 8 star kinds, a star at hits 1 and 2, the swelling countdown star, a red warning, each explosion frame, two overlapping explosions, the player normal/boosting/invincible, a hostile, the quasar, the death effect.
-- [ ] Test 12 at galaxy 21 on the 16 seeds: no more dropped frames than before this phase; dropped-frame count and slowest frame reported.
-- [ ] The phase 3-6 regression tests give the same numbers.
-- [ ] Char budget: chars used reported (spec §12).
+- [x] Screenshots of: all 8 star kinds, a star at hits 1 and 2, the swelling countdown star, a red warning, each explosion frame, two overlapping explosions, the player normal/boosting/invincible, a hostile, the quasar, the death effect.
+- [x] Test 12 at galaxy 21 on the 16 seeds: no more dropped frames than before this phase; dropped-frame count and slowest frame reported.
+- [x] The phase 3-6 regression tests give the same numbers.
+- [x] Char budget: chars used reported (spec §12).
+
+**Notes:**
+- All art drawn by a script (Claude's, not in the project) and saved as plain text in `assets/sprites.txt` and `assets/tiles.txt`; the files are the source from now on. 19 sprite frames of 95, **157 chars of 192** (8 star kinds 32, swelling star 8, 3 explosion frames 108, 5 specks, 4 icons), 35 spare. Program ends at `$49ED`.
+- Shared char colors white (`$D022`) and orange (`$D023`). Star kinds and own colors as in spec §12: small dot yellow, 4-ray flare white, 8-ray flare cyan, ringed star purple, binary pair cyan, large giant yellow, diamond pulsar green, soft-glow nebula star blue. Hit colors unchanged from phase 3 (own color only).
+- `tools/gfx.py`: new entry `msprite` (12 x 21 multicolor sprite: 1 = sprite color, 2 = `$D025`, 3 = `$D026`). The quasar is multicolor: white core, light blue disc, cyan jets, 4 frames (a picture every 4 frames). `video.init` sets `$D01C = $80` and the two shared sprite colors.
+- Specks are hi-res `icon` entries (1-px blue dots), drawn in cells without the multicolor bit (`video.SPECK_COLOR`). Dark grey and grey from the old spec can't be a cell's own color (0-7 only), so all specks are blue.
+- Swelling countdown star: `stars.shown_char` holds the chars each star is drawn with (`draw_tile` uses it); `stars.set_look` changes chars and color, `set_color` only the color. Big/white and small/yellow alternate every 8 frames; in the last half second the big one flashes white/yellow every 2 frames by color only (see frame time).
+- Explosion: `explode.stage`, `step_at`; flash 6 frames, burst 14, embers 10. `explode.owner` (`$C700`) holds the newest explosion over each tile, set by `draw_area` at the start; `draw_frame` (assembly) draws a frame only on the tiles the explosion owns. Since all explosions share the timeline, the newest is the brightest, and the older one has always ended first, so no slivers are left (checked in test 36 screenshots: the pair's shared column shows the newer burst, then its embers after the older one is restored).
+- Death effect: 20 frames flashing at full size (as before), then `SPR_DIE_0-2` for 10 frames each. The flash colors include black, so the sprite vanishes every 8 frames.
+- Hostile: a 4-pointed star with a small hole in the middle (a shuriken), so it never reads as the player.
+- **Frame time.** Before/after on the same 16 seeds (101-1717, `math.rndseed(seed, 4321)`), test 12 at galaxy 21, 45 s, in two passes: without the profiler for dropped frames, with it for the worst frame.
+  - First version (an animation step whenever due, `set_look` called for every countdown star every frame): 3 seeds dropped a frame against 2 before; the worst frames grew by up to 2,900 cycles (the step landing in a frame with an explosion start and a restore).
+  - Fixes: an animation step waits while the frame starts an explosion or restores one (`explode.MAX_LATE` = 4 frames at most, then it goes anyway); one compare per explosion per frame (`step_at`); countdown stars compare their char inline and call `set_look` only on a change; the last half second of a countdown flashes by color only.
+  - **Result: dropped frames the same as before: 1 frame in seed 909, 1 in seed 1212, 0 in the other 14** (before: the same two seeds, 1 each). The worst frame of each run (same game frame as before in 11 of the 12 seeds with both readouts) costs 100-540 cycles more (2-9 raster lines): e.g. seed 101 20,687 -> 21,225, 404 17,313 -> 17,595, 1212 21,592 -> 21,812, 1414 17,796 -> 18,209 (profiler numbers, which include about 600 cycles of its own). Slowest frame after: 21,832 (seed 909). The animation step itself costs up to about 1,800 cycles (`prof` sub 3).
+  - `prof.p8` now redraws its readouts every 16 frames: explosions and tile restores in rows 21-24 erased them between redraws (the old code drew only when a value changed). Some readouts are still erased at the moment of a screenshot (4 of 32).
+- Regression: tests 5 (105/205), 7 (600), 9 (multiplier at 158, 176, 258, 397, 554, 729), 10 (158, 172, 258-276), 14 (185 -> 281), 15 (185 -> 233, 1,500, 2 kills), 17 (3,100), 18 (600), 20 (61,400, 4 lives), 29 (2 bounces, 300), 31 (edge tiles restored), 34 (same readouts as phase 6) give the same numbers.
+- Designer played the build, also with `quasar.FORCE` on (2026-10-18): approved ("looked great"). `FORCE` back off.
+- New self-test 36 (art showcase, no DEBUG_HUD, play frame in HUD columns 18-21): the 8 kinds plain, at 1 and 2 hits, two countdown stars in opposite swell frames, a warning, a still hostile, the quasar, explosions started at frames 35, 40/50 (overlapping pair), 48 and 58, a boost at 70, invincibility at 90 and a death at 110. Screenshots at frames 63 (everything but the red), 67 (red warning), 71 (pair after the older one ended), 79 (boost glow), 95 (invincible glow), 115-160 (death flash and shrink). VICE's start time varies by a few frames between runs; the frame counter tells which frame a shot shows.
 
 ## Phase 8: Sound
 **Status:** not started

@@ -4,7 +4,7 @@
 
 prof {
     const ubyte PARTS = 10
-    const ubyte SUBS = 3                ; 0 explode.start, 1 explode.restore, 2 score.add_type
+    const ubyte SUBS = 4                ; 0 explode.start, 1 explode.restore, 2 score.add_type, 3 explode.step
 
     uword last                          ; timer value at the last mark
     uword[PARTS] cur                    ; this frame's cycles per part
@@ -85,15 +85,15 @@ prof {
             worst_used = hostiles.used
             dirty = true
         }
-        if dirty and frames & 15 == 0 {
+        if frames & 15 == 0 {
             dirty = false
-            show()
+            show()                      ; every 16 frames: stars and explosions in rows 21-24 draw over it
         }
     }
 
     sub show() {
         ; row 21: worst frame parts 0-7 | row 22: parts 8-9, total, frame, live, blast countdowns, hostiles |
-        ; row 23: maxima of parts 0-7 | row 24: maxima of parts 8-9, then explode.start, restore, score.add
+        ; row 23: maxima of parts 0-7 | row 24: maxima of parts 8-9, then explode.start, restore, score.add, step
         sys.memset(video.row_addr(21), 160, video.CHAR_SPACE)
         sys.memset(video.row_addr(21) + video.COLOR_RAM - video.SCREEN, 160, 1)
         ubyte k

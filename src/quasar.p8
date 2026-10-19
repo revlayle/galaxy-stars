@@ -9,14 +9,14 @@
 
 quasar {
     const bool FORCE = false           ; debug: every supernova leaves one (still once per galaxy). Keep false.
-    const bool ALWAYS = FORCE or main.TEST == 33 or main.TEST == 34 or main.TEST == 35
+    const bool ALWAYS = FORCE or (main.TEST >= 33 and main.TEST <= 36)
     const ubyte CHANCE = 100            ; [TUNE] 1 in 100 per supernova
     const ubyte LIFE_FRAMES = 250       ; 5 s
     const ubyte BLINK_FRAMES = 50       ; [TUNE] blinks in the last second
     const ubyte BLINK = 4               ; [TUNE] shown 4 frames, hidden 4
-    const ubyte ANIM_DELAY = 4          ; [art phase] game frames per picture
-    const ubyte ANIM_FRAMES = 2
-    const ubyte COLOR = 14              ; [art phase] light blue
+    const ubyte ANIM_DELAY = 4          ; [TUNE] game frames per picture
+    const ubyte ANIM_FRAMES = 4
+    const ubyte COLOR = 14              ; light blue disc; multicolor sprite, white core and cyan jets (video.p8)
     const ubyte SPRITE = 7
     const ubyte BOX = 12
 
