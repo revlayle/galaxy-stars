@@ -1,4 +1,4 @@
-# Pending change: title screen, attract mode and music
+# Pending change: title screen and attract mode
 
 Designer request, 2026-10-18, for after phase 8. When built, merge into `spec.md` (§11 game flow, §12 assets, §13 sound) and delete this file.
 Items marked **[DECIDE]** are proposals waiting for the designer. Items marked **[TUNE]** are starting values.
@@ -53,9 +53,9 @@ Two ways; proposal: **the AI pilot** **[DECIDE]**.
 - Galaxy for the demo: galaxy 3-5, so there are hostiles to show **[TUNE]**. The demo doesn't touch the high score.
 - Frame time: the pilot runs in the game's frame budget, which is thin at galaxy 21 but has plenty of room at galaxy 3-5.
 
-## 5. Music
+## 5. Music (later, not in this change)
 
-The designer composes; the game plays it. Proposal:
+Designer, 2026-10-18: no music for starters; the title and attract mode are silent. This section is kept as the plan for when the designer has a tune. The designer composes; the game plays it. Proposal:
 - **Tool: GoatTracker 2** (free, Windows, the most common C64 tracker). Any tracker works if it exports a standard player with an init and a play address (SID-Wizard, CheeseCutter); a `.sid` file works too, the build strips its header.
 - **Export:** a binary relocated to a fixed address below `$C000`, e.g. `$A000` **[DECIDE]** (the program ends around `$4A00`, so there is room), using zero-page addresses the game doesn't use (to be picked from the Prog8 zero-page map when this is built). Saved as `assets/music/title.bin` (or `.sid`).
 - **Playback:** included with `%asmbinary` in a block at that address; `init` called with the song number on entering the title, `play` once per frame from the frame IRQ. Silenced when a game starts.
@@ -69,7 +69,8 @@ The designer composes; the game plays it. Proposal:
 
 1. Title logo with the star fly-in, twinkle and text.
 2. Attract cycle with HOW TO PLAY and SCORING.
-3. Music playback with a test tune (until the designer's arrives).
-4. Demo pilot (stretch).
+3. Demo pilot (stretch).
+
+Music (§5) is not part of this change.
 
 Each step ends with a build for the designer, as with the phases.
