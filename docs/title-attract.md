@@ -4,7 +4,7 @@ Designer request, 2026-10-18, for after phase 8. Items marked **[DECIDE]** are p
 
 Designer's wishes: a logo built by stars flying in fast across the screen; HOW TO PLAY and SCORING pages; a self-playing demo as a stretch goal; the session high score stays as it is; the designer composes the music if the game can play it.
 
-**Status:** steps 1 and 2 (title logo, attract cycle with HOW TO PLAY and SCORING) built 2026-10-18, waiting for the designer to play them. They are merged into `spec.md` §11, §12 and §14; sections 1-3 of this file are replaced by the notes below. Step 3 (demo) and the music plan stay here until built.
+**Status:** steps 1 and 2 (title logo, attract cycle with HOW TO PLAY and SCORING) built 2026-10-18; step 3 (the demo, with the AI pilot) built 2026-10-18 and approved by the designer as is. All three are merged into `spec.md` §11, §12 and §14; sections 1-4 of this file are replaced by the notes below. The music plan (§5) stays here.
 
 ---
 
@@ -24,15 +24,22 @@ Designer's wishes: a logo built by stars flying in fast across the screen; HOW T
 - Self-tests (in `main.p8`, need `input.SCRIPTED`): 38 runs test 19's flow, then holds fire from the game-over screen for 500 frames into the title (no game starts, the cycle goes on); 39 runs the attract cycle from power-on with fire on page `main.ATTRACT_FIRE` (1 title during the build, 2 HOW TO PLAY, 3 SCORING, 4 second title).
 - Checked by screenshot: the logo mid-build and finished; HOW TO PLAY, SCORING, the next TITLE (logo rebuilt) and HOW TO PLAY again in a run with no input; fire on each of the 4 pages starts GALAXY 01 in multicolor with a new random layout; test 38: GAME OVER, then the title with the updated high score (6,000) stays up while fire is held, then HOW TO PLAY and SCORING follow.
 
-## 4. Demo play (stretch goal)
+## Step 3: built (notes)
 
-A self-playing game with "DEMO" on the HUD, 30 s or until the pilot loses a life, then back to TITLE (it would follow SCORING in the cycle). Fire starts a real game.
-
-Two ways; proposal: **the AI pilot** **[DECIDE]**.
-- **AI pilot:** a small routine that writes joystick bits instead of `$DC00` (the scripted-input path already exists): head for the nearest idle star, boost into it, then move away from countdown stars and explosions; boost into a hostile that is close and in front; otherwise keep away from hostiles. It doesn't have to play well, just look busy and safe for 30 s. Works with any seed and keeps working after gameplay tuning.
-- **Recorded input:** the designer plays, a record switch logs the joystick to RAM, and the demo replays it with a fixed seed. Looks most natural, but any change to gameplay or timing makes the replay drift out of sync, so it has to be re-recorded after tuning.
-- Galaxy for the demo: galaxy 3-5, so there are hostiles to show **[TUNE]**. The demo doesn't touch the high score.
-- Frame time: the pilot runs in the game's frame budget, which is thin at galaxy 21 but has plenty of room at galaxy 3-5.
+- Designer decision (2026-10-18): the AI pilot, not recorded input. `src/demo.p8`; the pilot's rules are in `spec.md` §11.
+- **Ends after GALAXY CLEAR too:** the pilot usually clears galaxy 3-5 before the 30 s are up, so a cleared galaxy shows GALAXY CLEAR (with the time bonus) and then the demo ends. Not in the proposal.
+- **Stars turning hostile are threats, not targets:** an early version also went for WARNING stars; a hostile appearing under the walking player killed it. They now push the pilot away (32 px) and are never targets.
+- **Sound effects play in the demo** (the rest of the attract cycle is silent). Designer, 2026-10-18: keep them.
+- DEMO sits in HUD columns 16-19, not after the invincibility field: a quasar pickup in the demo put its counter right against the word ("+1DEMO").
+- Frame time: the first pilot compared every star against every countdown and explosion and took up to 250 raster lines on chain-reaction frames (7 overrun frames in 8 games). Now threats are filtered by tile in assembly, at most 8 weighed, the distance is assembly, and the next-star search is spread over frames (up to 2 stars, one tile check a frame): at most 91 lines (including any frame IRQ that falls inside), 0 overrun frames in 40 games.
+- Self-tests: 39 has two more fire pages, `main.ATTRACT_FIRE` 4 (150 frames into the demo) and 5 (the title after the demo); 40 plays 16 demo games in a row (`main.DEMO_SEED` fixes the seed) and shows a table (galaxy (+1 after a clear), frames played, stars, stars left, hostiles destroyed, lives lost (a symbol when it gained lives), overrun frames, distances at a death, stick direction changes, the pilot's slowest frame). `demo.FREEZE_AT_DEATH` stops at the first death with the pilot's state on the HUD row and the nearby threats on row 24.
+- **Results before the smoothing** (test 40, 5 runs of 8 games, the RNG running on): 0 lives lost in 40 games; 33 cleared the galaxy, after 14.6-29.5 s; 7 played the full 30 s with 1-2 stars left; 2-5 hostiles destroyed per game (hurls and explosions). An earlier pilot (before the changes above) lost a life in 3 of 24 games (at 4 s, 12 s and 16 s); the one with a readout was touched by a hostile.
+- **Smoothing** (designer, after watching: "really fast back and forth movements, it looks jerky"): the pilot decided its direction from scratch every frame, so near a boundary (straight vs diagonal towards a star, approach vs flee at a flee distance) it flipped almost every frame: 450-840 direction changes in a 30 s game. Now a new direction is held 8 frames while walking to a star, and after a flee.
+  - Tried first: holding every direction, also while fleeing (with an override for close threats, then also for turns over 45 degrees near a blast). It lost more lives; a frozen death showed why: between two explosions only one way out is safe, and a held direction 45 degrees off leads into one of them. So fleeing and hostile hunts react every frame.
+  - Also added: a boost while fleeing from a close threat (16 px inside its distance). A frozen death had the pilot trapped at the top edge between a countdown star and a hostile it couldn't hurl.
+  - **Result** (test 40, 3 fixed seeds x 16 games, the same seeds with and without the hold): direction changes per game 70-400, mostly about 140 (without the hold 450-840); lives lost 4 of 48 with the hold, 2 of 48 without (too few to call a difference); 0 overrun frames; the pilot's slowest frame 75-85 raster lines.
+- **It plays better than "not well":** it clears most galaxies. Designer, 2026-10-18: fine as is.
+- Checked by screenshot: the demo's GALAXY 05 start, play with explosions, a hostile and the multiplier at x8-x9, its GALAXY CLEAR, then TITLE with the high score unchanged (0 after power-on; 6,000 after test 38's game, through two demos); fire 150 frames into the demo starts GALAXY 01 with a new layout and no DEMO on the HUD (test 39, page 4); the title after the demo starts a game on fire (page 5); test 38's held fire still doesn't start a game, and the cycle runs on through the demo.
 
 ## 5. Music (later, not in this change)
 
@@ -50,7 +57,7 @@ Designer, 2026-10-18: no music for starters; the title and attract mode are sile
 
 1. Title logo with the star fly-in, twinkle and text. **Built.**
 2. Attract cycle with HOW TO PLAY and SCORING. **Built.**
-3. Demo pilot (stretch).
+3. Demo pilot (stretch). **Built.**
 
 Music (§5) is not part of this change.
 

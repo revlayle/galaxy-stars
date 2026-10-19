@@ -13,6 +13,7 @@
 %import prof
 %import quasar
 %import sound
+%import demo
 %zeropage basicsafe
 %memtop $C000
 
@@ -40,7 +41,10 @@ main {
     ; Sound (phase 8): 37 every effect in one flow run (DEBUG_HUD: a counter per effect)
     ; Title and attract (pending change): 38 the flow of test 19, fire held from the game over into the title
     ; (must not start a game), then the attract cycle; 39 the attract cycle from power-on, fire on page
-    ; ATTRACT_FIRE (0 never, 1 title during the logo build, 2 HOW TO PLAY, 3 SCORING, 4 the second title)
+    ; ATTRACT_FIRE (0 never, 1 title during the logo build, 2 HOW TO PLAY, 3 SCORING, 4 demo (150 frames after it
+    ; starts), 5 the second title)
+    ; Demo (pending change): 40 eight demo games in a row, then a table per game: galaxy, frames played, stars at
+    ; the start, stars left, hostiles destroyed, lives lost, frames that overran
     const ubyte TEST = 0
     const ubyte ATTRACT_FIRE = 0
     const bool OLD_TEST = TEST != 0 and (TEST < 19 or (TEST >= 27 and TEST <= 31) or (TEST >= 33 and TEST <= 36))  ; one galaxy, never ends
@@ -58,6 +62,7 @@ main {
     const ubyte STAGE_TITLE = 0
     const ubyte STAGE_PLAY = 1
     const ubyte STAGE_GAME_OVER = 2
+    const ubyte STAGE_DEMO = 3
 
     sub start() {
         video.init()
@@ -70,6 +75,8 @@ main {
             extra_life_test()
         if TEST == 32
             core_map_test()
+        if TEST == 40
+            demo_test()
 
         repeat {
             if TEST == 0 or TEST == 19 or TEST == 38 or TEST == 39
@@ -97,6 +104,8 @@ main {
                 break
             if pages.scoring()
                 break
+            if demo.run()
+                break
         }
         video.wait_frame()
         video.clear_screen()
@@ -117,7 +126,7 @@ main {
     sub galaxy_start() {
         ; GALAXY nn for 2 s while the stars appear in random order; no control, the timer doesn't run.
         explode.clear()
-        if TEST == 0 or TEST == 22 or TEST == 39 or ((TEST == 19 or TEST == 38) and score.galaxy != 1)
+        if TEST == 0 or demo.on or TEST == 22 or TEST == 39 or TEST == 40 or ((TEST == 19 or TEST == 38) and score.galaxy != 1)
             stars.place(stars.for_galaxy(score.galaxy))
         else
             test_layout()
@@ -140,6 +149,8 @@ main {
             input.read()
             stars.reveal_next()
             video.message(START_ROW, START_COL, galaxy_text, MSG_COLOR)     ; again over a star drawn under it
+            if demo.quit
+                break                   ; fire during the demo
         }
         while stars.revealed < stars.count
             stars.reveal_next()
@@ -150,7 +161,8 @@ main {
         ; PLAYING. True when the galaxy is clear, false when the last life is lost (after its death effect).
         ; When the last star is destroyed the timer and multiplier stop; play goes on until the explosions and
         ; hurls are over (the player can still be hurt) and a death effect has ended.
-        test_stage(STAGE_PLAY)
+        if not demo.on
+            test_stage(STAGE_PLAY)
         if PROFILE
             prof.init()
         repeat {
@@ -201,8 +213,10 @@ main {
                 prof.mark(9)
                 prof.end_frame()
             }
-            if TEST != 0
+            if TEST != 0 and not demo.on
                 test_frame()
+            if demo.on and demo.over()
+                return false
             if player.gone
                 return false
             if not OLD_TEST and stars.left == 0 and explode.live == 0 and explode.queued == 0
@@ -239,8 +253,10 @@ main {
         repeat CLEAR_FRAMES {
             video.wait_frame()
             input.read()
-            if TEST != 0
+            if TEST != 0 and not demo.on
                 test_frame()
+            if demo.quit
+                break                   ; fire during the demo
         }
         if score.galaxy != 255
             score.galaxy++
@@ -484,7 +500,7 @@ main {
     ubyte[] script_fire_1 = [30, 0, 1, 16, 0, 0]
     ubyte[] script_fire_2 = [250, 0, 250, 0, 250, 0, 10, 0, 1, 16, 0, 0]
     ubyte[] script_fire_3 = [250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 60, 0, 1, 16, 0, 0]
-    ubyte[] script_fire_4 = [250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 250, 0, 30, 0, 1, 16, 0, 0]
+    ubyte[] script_fire_demo = [150, 0, 1, 16, 0, 0]
     ; still until a hostile moves, Run/Stop (32), 100 frames paused, Run/Stop
     ubyte[] script_pause = [250, 0, 170, 0, 1, 32, 99, 0, 1, 32, 0, 0]
     ; test 24: after the first respawn, boost towards where the hostile is pushed (direction filled in then)
@@ -531,10 +547,10 @@ main {
                             1 -> set_script(&script_fire_1)
                             2 -> set_script(&script_fire_2)
                             3 -> set_script(&script_fire_3)
-                            4 -> set_script(&script_fire_4)
                             else -> set_script(&script_still)
                         }
-                    }
+                    } else if title_visits == 1 and ATTRACT_FIRE == 5
+                        set_script(&script_fire_1)
                 } else if TEST == 38 {
                     if title_visits == 0
                         set_script(&script_title)   ; later titles keep the game over's script
@@ -574,6 +590,10 @@ main {
                         stars.timer[1] = SAFE_BLAST
                     }
                 }
+            }
+            STAGE_DEMO -> {
+                if TEST == 39 and ATTRACT_FIRE == 4
+                    set_script(&script_fire_demo)
             }
             STAGE_GAME_OVER -> {
                 if TEST == 38
@@ -748,6 +768,66 @@ main {
             hex_digit(35, hostiles.used)
         }
         hex_digit(38, player.deaths)
+    }
+
+    const ubyte DEMO_RUNS = 16
+    const uword DEMO_SEED = 0           ; test 40: 0 = seed from the startup timing
+    ubyte[DEMO_RUNS] dt_galaxy
+    uword[DEMO_RUNS] dt_frames
+    ubyte[DEMO_RUNS] dt_count
+    ubyte[DEMO_RUNS] dt_left
+    ubyte[DEMO_RUNS] dt_kills
+    ubyte[DEMO_RUNS] dt_lost
+    uword[DEMO_RUNS] dt_late
+    ubyte[DEMO_RUNS] dt_blast
+    ubyte[DEMO_RUNS] dt_host
+    uword[DEMO_RUNS] dt_turns
+
+    sub demo_test() {
+        ; Test 40: DEMO_RUNS demo games one after another (the RNG runs on), then one row each from char row 2:
+        ; galaxy | frames played | stars | stars left | hostiles destroyed | lives lost | frames overrun |
+        ; at a death: nearest explosion, nearest hostile (px) | stick direction changes. Row 20: most raster lines the pilot took in a frame.
+        stars.seed()
+        if DEMO_SEED != 0
+            math.rndseed(DEMO_SEED, DEMO_SEED * 7 + 1)
+        ubyte k
+        for k in 0 to DEMO_RUNS - 1 {
+            hostiles.kills = 0
+            demo.late = 0
+            demo.turns = 0
+            void demo.run()
+            dt_galaxy[k] = score.galaxy
+            dt_frames[k] = demo.PLAY_FRAMES - demo.frames_left
+            dt_count[k] = stars.count
+            dt_left[k] = stars.left
+            dt_kills[k] = hostiles.kills
+            dt_lost[k] = score.START_LIVES - score.lives
+            dt_late[k] = demo.late
+            dt_turns[k] = demo.turns
+            dt_blast[k] = demo.die_blast
+            dt_host[k] = demo.die_host
+            demo.die_blast = 0
+            demo.die_host = 0
+        }
+        video.wait_frame()
+        video.clear_screen()
+        video.title_mode()
+        for k in 0 to DEMO_RUNS - 1 {
+            uword r = (2 + k as uword) * 40 + 4
+            hex_byte(r, dt_galaxy[k])
+            hex_word(r + 3, dt_frames[k])
+            hex_byte(r + 8, dt_count[k])
+            hex_byte(r + 11, dt_left[k])
+            hex_byte(r + 14, dt_kills[k])
+            hex_digit(r + 17, dt_lost[k])
+            hex_word(r + 19, dt_late[k])
+            hex_byte(r + 24, dt_blast[k])
+            hex_byte(r + 27, dt_host[k])
+            hex_word(r + 30, dt_turns[k])
+        }
+        hex_byte(23 * 40 + 4, demo.max_lines)
+        repeat {
+        }
     }
 
     ubyte[17] core_row

@@ -2,6 +2,8 @@
 ; Adapted from Smashy Smashy.
 ; SCRIPTED = true replays the `script` table instead of reading $DC00 (self-testing only; keep false in builds
 ; for the designer).
+; While `pilot` is on (the demo, demo.p8) the game gets the pilot's bits; the stick (or the script) only goes to
+; real_pressed, and a fire press there sets demo.quit.
 
 input {
     const bool SCRIPTED = false
@@ -17,6 +19,9 @@ input {
     ubyte held          ; bits held this frame
     ubyte pressed       ; bits that went from released to held this frame
     ubyte prev
+    bool pilot
+    ubyte real_pressed                  ; pilot on: presses on the real stick
+    ubyte real_prev
 
     ; (frames to hold, joystick bits) pairs. A 0 frame count ends the script; input is released after that.
     ; Self-tests may point `script` at their own table.
@@ -41,9 +46,30 @@ input {
                 joy |= STOP
             c64.CIA1PRA = $FF
         }
+        if pilot {
+            real_pressed = joy & ~real_prev
+            real_prev = joy
+            if real_pressed & FIRE != 0
+                demo.quit = true
+            joy = demo.steer()
+        }
         pressed = joy & ~prev
         held = joy
         prev = joy
+    }
+
+    sub start_pilot() {
+        real_prev = prev                ; a fire held from before is not a press
+        real_pressed = 0
+        pilot = true
+    }
+
+    sub stop_pilot() {
+        ; Back to the stick: what it holds now is not a new press on the next page.
+        pilot = false
+        prev = real_prev
+        held = real_prev
+        pressed = 0
     }
 
     sub scripted() -> ubyte {

@@ -261,11 +261,11 @@ Actor arrays (index 0 = player, 1-6 = hostiles): `uword x`, `ubyte y` (top-left 
 ## 11. Game flow
 
 ```
-ATTRACT (TITLE -> HOW TO PLAY -> SCORING -> TITLE ...) --fire--> NEW_GAME --> GALAXY_START --> PLAYING
+ATTRACT (TITLE -> HOW TO PLAY -> SCORING -> DEMO -> TITLE ...) --fire--> NEW_GAME --> GALAXY_START --> PLAYING
 PLAYING --stars_left = 0--> GALAXY_CLEAR --> GALAXY_START (galaxy + 1)
 PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 ```
-- **Attract cycle** (designer, 2026-10-18): TITLE (logo build, then 8 s) → HOW TO PLAY (10 s) → SCORING (12 s) → TITLE ... **[TUNE]** `title.SHOW_FRAMES`, `pages.HOW_FRAMES`, `pages.SCORING_FRAMES`. Fire (edge-triggered: a fire held from the game-over screen doesn't count) starts a game from any page, also during the logo build; the RNG is seeded at that press. After GAME OVER the cycle starts at TITLE. Silent (no music, §13). `main.attract()`.
+- **Attract cycle** (designer, 2026-10-18): TITLE (logo build, then 8 s) → HOW TO PLAY (10 s) → SCORING (12 s) → DEMO (up to 30 s of play) → TITLE ... **[TUNE]** `title.SHOW_FRAMES`, `pages.HOW_FRAMES`, `pages.SCORING_FRAMES`. Fire (edge-triggered: a fire held from the game-over screen doesn't count) starts a game from any page, also during the logo build; the RNG is seeded at that press. After GAME OVER the cycle starts at TITLE. Silent (no music, §13); only the demo plays the game's sound effects. `main.attract()`.
 - **TITLE** (`title.p8`): hi-res character mode, so the logo chars can use all 16 colors (the game switches multicolor back on; sprites hi-res, the quasar's multicolor bit off).
   - Logo: "GALAXY" (char rows 3-7, columns 8-30) and "STARS" (rows 10-14, columns 10-28) in 3 x 5 block letters with 1 column between letters; each letter "pixel" is one star char (`icon logo`). 93 chars. The shapes are a string table in `title.p8`.
   - Build: the logo chars fly in as stars. 7 sprites (1-7; sprite 0 is the player star), white and yellow, each from a random point just off a screen edge (hidden by the border) in a straight line to its char in 8 frames, then the char appears and the sprite starts the next one. Random order. About 112 frames (2.2 s). A landed char flashes white for 2 frames, then takes its band color **[TUNE]**.
@@ -274,6 +274,10 @@ PLAYING --no lives left--> GAME_OVER --fire--> TITLE
 - **HOW TO PLAY** and **SCORING** (`pages.p8`): the game's multicolor mode with real tiles and sprites (spinning), text in hi-res cells; graphics centred on pixel column 32, text from column 9. All text is in tables in `pages.p8`.
   - HOW TO PLAY: player star "MOVE WITH THE STICK / FIRE TO BOOST"; a star "RAM STARS TO MAKE THEM GO / SUPERNOVA: 3 BUMPS OR 1 BOOST"; the swelling star and the explosion's burst frame "HIT STARS SWELL, THEN EXPLODE / GET CLEAR BEFORE THEY BLOW"; a hostile "HURL HOSTILES WITH A BOOST / DON'T LET THEM TOUCH YOU"; the quasar "GRAB A QUASAR FOR 8 SECONDS / OF INVINCIBILITY"; at the bottom "CLEAR ALL STARS TO REACH THE NEXT GALAXY".
   - SCORING: a star "SUPERNOVA 100 / AND MULTIPLIER +1"; a hostile "HOSTILE CHAIN / 500 1000 2000 4000 8000 16000"; time icon "TIME BONUS 100 PER SECOND"; multiplier icon "ALL POINTS X MULTIPLIER"; lives icon "EXTRA LIFE EVERY 50000". The supernova, chain and extra-life values are read from `score.p8`, so they follow tuning; the "100 per second" is text.
+- **DEMO** (`demo.p8`, designer, 2026-10-18): a game played by a pilot routine in a random galaxy 3-5 **[TUNE]**, "DEMO" on the HUD (columns 16-19, before the invincibility field). It starts with GALAXY nn as usual and ends after 30 s of play (`demo.PLAY_FRAMES`) **[TUNE]**, when the pilot loses a life (after the death effect) or after GALAXY CLEAR when it clears the galaxy; then TITLE. Fire starts a game at any point of it (GALAXY nn, play, GALAXY CLEAR). It never touches the high score (only GAME_OVER updates it). Pause doesn't work in the demo.
+  - The pilot writes joystick bits in place of the stick (`input.pilot`; the real stick then only counts for the fire that ends the demo). Each frame, in this order: away from countdown stars (44 px), explosions (40 px) and stars turning hostile (32 px) within 3 tiles, their pushes added up (along a playfield edge when one is in the way), with a boost when a threat is 16 px or more inside its distance; a boost into a chasing hostile closer than 44 px (steering at it while the boost runs); away from a hostile closer than 52 px when it can't boost; else to the nearest IDLE star with no countdown, warning or explosion on or next to its tile, and a boost into it from 72 px **[TUNE]** (distances between centres, longer axis plus half the shorter).
+  - Smooth movement (designer, 2026-10-18: the per-frame decisions looked jerky): walking to a star, a new stick direction is held at least 8 frames (`demo.HOLD_FRAMES`) **[TUNE]**, and so is the last flee direction after the threats are out of range. Fleeing, going for a hostile and aiming a boost react at once.
+  - Frame time: threats are filtered by tile in assembly, at most 8 are weighed, and the search for the next star looks at up to 2 stars a frame (one tile check). The pilot takes at most about 90 raster lines on the busiest frames.
 - **GALAXY_START:** "GALAXY 01" above the player (char row 9) for 2 s while the stars appear in random order, one per frame **[TUNE]**; the player sits in the centre. No control, timer not running. Then PLAYING.
 - **PLAYING:** as described above.
 - **Last star destroyed** (designer, 2026-10-17): the timer and the multiplier stop at once. Play goes on (the player keeps control and can still be hurt) until no explosion is running, no hurled hostile is flying and no death effect is playing. A death meanwhile resets the multiplier before the bonus; if it was the last life, it is game over.
@@ -335,6 +339,7 @@ src/score.p8       BCD score, multiplier, lives, timer, chains
 src/quasar.p8      quasar spawn and pickup
 src/title.p8       title (star-built logo) and game-over screens
 src/pages.p8       attract pages: HOW TO PLAY, SCORING
+src/demo.p8        attract demo: the pilot that plays it
 src/sound.p8       SID effects
 src/gen_assets.p8  GENERATED by tools/gfx.py
 assets/            sprites.txt, tiles.txt
